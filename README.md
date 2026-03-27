@@ -54,8 +54,13 @@ make configure
 make build
 make web-install
 make web-build
+make install
+make package
 make release-check
 ```
+
+`make install` stages the distributable layout under `.stage/`, and `make package`
+emits a versioned `.tar.gz` using CPack.
 
 ## Modes
 
@@ -86,13 +91,19 @@ make release-check
 ```text
 icey-server [options]
   -c, --config <path>     Config file (default: ./config.json)
+  --host <host>           Bind host (default from config)
   --port <port>           HTTP/WS port (default: 4500)
   --turn-port <port>      TURN port (default: 3478)
+  --turn-external-ip <ip> Public IP advertised by TURN
   --mode <mode>           stream|record|relay
-  --source <path>         Media source file or device
+  --source <path-or-url>  Media source file, device, or RTSP URL
   --record-dir <path>     Output directory for record mode (default: ./recordings)
   --web-root <path>       Path to web UI dist/ directory
+  --loop                  Enable looping in stream mode
+  --no-loop               Disable looping in stream mode
   --no-turn               Disable embedded TURN server
+  --version               Print version and exit
+  -h, --help              Show this help and exit
 ```
 
 ## Browser Counterpart
@@ -161,8 +172,13 @@ icey-server
 
 Frontend: `symple-client` + `symple-player` (npm, bundled with Vite).
 
+## License
+
+`icey-server` is licensed under `AGPL-3.0-or-later`. Commercial licensing is
+available from 0state; see [LICENSE.md](LICENSE.md).
+
 ## See Also
 
-- The `icey` core repo `docs/recipes/media-server-stack.md` recipe for the stack-level architecture
-- [WebRTC guide](../../../../docs/modules/webrtc.md)
-- [TURN guide](../../../../docs/modules/turn.md)
+- [icey media-server stack recipe](https://github.com/nilstate/icey/blob/main/docs/recipes/media-server-stack.md)
+- [icey WebRTC guide](https://github.com/nilstate/icey/blob/main/docs/modules/webrtc.md)
+- [icey TURN guide](https://github.com/nilstate/icey/blob/main/docs/modules/turn.md)

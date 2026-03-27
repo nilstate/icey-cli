@@ -53,6 +53,12 @@ jobs:
       - name: Build web UI
         run: npm --prefix web run build
 
+      - name: Install staged layout
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/icey-install" --component apps
+          test -x "$RUNNER_TEMP/icey-install/bin/icey-server"
+          test -f "$RUNNER_TEMP/icey-install/share/icey-server/web/index.html"
+          "$RUNNER_TEMP/icey-install/bin/icey-server" --version
+
       - name: Browser smoke
         run: npm --prefix web run test:smoke:chromium
-

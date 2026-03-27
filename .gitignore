@@ -1,7 +1,9 @@
 /build/
 /build-*/
+/.stage/
+/_CPack_Packages/
+/icey-server-*.tar.gz
 /web/node_modules/
 /web/dist/
 /docker/recordings/*.mp4
 .DS_Store
-

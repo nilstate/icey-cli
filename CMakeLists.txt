@@ -39,11 +39,19 @@ add_subdirectory(src/server)
 
 install(FILES "${PROJECT_SOURCE_DIR}/config.json"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server"
-  RENAME config.example.json)
+  RENAME config.example.json
+  COMPONENT apps)
+
+install(FILES
+  "${PROJECT_SOURCE_DIR}/README.md"
+  "${PROJECT_SOURCE_DIR}/LICENSE.md"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/icey-server"
+  COMPONENT apps)
 
 if(EXISTS "${ICEY_WEB_DIST_DIR}/index.html")
   install(DIRECTORY "${ICEY_WEB_DIST_DIR}/"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server/web")
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server/web"
+    COMPONENT apps)
 else()
   message(STATUS "Web dist not found at ${ICEY_WEB_DIST_DIR}; install will skip web assets")
 endif()

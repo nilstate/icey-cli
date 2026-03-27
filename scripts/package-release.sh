@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-release}"
+PACKAGE_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+PACKAGE_NAME="icey-server-${PACKAGE_VERSION}-$(uname -s)-$(uname -m)"
+STAGE_ROOT="${STAGE_ROOT:-$ROOT_DIR/.stage/package-release}"
+PACKAGE_ROOT="$STAGE_ROOT/$PACKAGE_NAME"
+PACKAGE_PATH="$ROOT_DIR/${PACKAGE_NAME}.tar.gz"
+
+if [[ ! -f "$ICEY_SOURCE_DIR/CMakeLists.txt" ]]; then
+  echo "ICEY_SOURCE_DIR does not point to an icey source tree: $ICEY_SOURCE_DIR" >&2
+  exit 1
+fi
+
+cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DICEY_SOURCE_DIR="$ICEY_SOURCE_DIR"
+cmake --build "$BUILD_DIR" -j1 --target icey-server
+
+npm --prefix "$ROOT_DIR/web" ci
+npm --prefix "$ROOT_DIR/web" run build
+
+rm -rf "$PACKAGE_ROOT"
+mkdir -p "$STAGE_ROOT"
+
+cmake --install "$BUILD_DIR" --prefix "$PACKAGE_ROOT" --component apps
+
+if [[ ! -x "$PACKAGE_ROOT/bin/icey-server" ]]; then
+  echo "Packaged binary missing from staged layout: $PACKAGE_ROOT/bin/icey-server" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PACKAGE_ROOT/share/icey-server/web/index.html" ]]; then
+  echo "Packaged web UI missing from staged layout: $PACKAGE_ROOT/share/icey-server/web/index.html" >&2
+  exit 1
+fi
+
+rm -f "$PACKAGE_PATH"
+tar -C "$STAGE_ROOT" -czf "$PACKAGE_PATH" "$PACKAGE_NAME"
+echo "Created package: $PACKAGE_PATH"
