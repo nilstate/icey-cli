@@ -56,11 +56,45 @@ make web-install
 make web-build
 make install
 make package
+make package-deb
+make package-apt
+make package-managers
 make release-check
 ```
 
 `make install` stages the distributable layout under `.stage/`, and `make package`
-emits a versioned `.tar.gz` using CPack.
+emits versioned `.tar.gz` and `.zip` artifacts from the staged app layout.
+
+## Package Managers
+
+The repo now includes packaging inputs for every first-class package manager
+surface:
+
+- Homebrew
+- AUR
+- Debian / APT
+- Nix
+- winget
+- Scoop
+- Chocolatey
+
+The tracked templates live under [packaging/](/home/kam/dev/icey-cli/packaging/README.md), and the local rendered outputs are generated into `.stage/package-managers/rendered/`.
+
+Use:
+
+```bash
+make package-managers
+```
+
+That generates and validates:
+
+- `icey-cli-<version>-source.tar.gz`
+- `icey-<version>-source.tar.gz`
+- `icey-server-<version>-Linux-x86_64.tar.gz`
+- `icey-server-<version>-Linux-x86_64.zip`
+- `icey-server_<version>_amd64.deb`
+- `icey-server-apt-repo-<version>.tar.gz`
+- rendered manifests for Homebrew, AUR, Debian/APT, Nix, winget, Scoop, and Chocolatey
 
 ## Modes
 

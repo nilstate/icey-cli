@@ -23,8 +23,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             gcc-13 g++-13 \
+            dpkg-dev \
             libssl-dev \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+            unzip zip
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -62,3 +64,9 @@ jobs:
 
       - name: Browser smoke
         run: npm --prefix web run test:smoke:chromium
+
+      - name: Package manager cutover
+        env:
+          ICEY_SOURCE_DIR: ${{ github.workspace }}/icey
+          BUILD_DIR: ${{ github.workspace }}/build
+        run: ./scripts/package-manager-check.sh

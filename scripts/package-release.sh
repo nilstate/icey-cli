@@ -9,6 +9,7 @@ PACKAGE_NAME="icey-server-${PACKAGE_VERSION}-$(uname -s)-$(uname -m)"
 STAGE_ROOT="${STAGE_ROOT:-$ROOT_DIR/.stage/package-release}"
 PACKAGE_ROOT="$STAGE_ROOT/$PACKAGE_NAME"
 PACKAGE_PATH="$ROOT_DIR/${PACKAGE_NAME}.tar.gz"
+ZIP_PATH="$ROOT_DIR/${PACKAGE_NAME}.zip"
 
 if [[ ! -f "$ICEY_SOURCE_DIR/CMakeLists.txt" ]]; then
   echo "ICEY_SOURCE_DIR does not point to an icey source tree: $ICEY_SOURCE_DIR" >&2
@@ -40,4 +41,11 @@ fi
 
 rm -f "$PACKAGE_PATH"
 tar -C "$STAGE_ROOT" -czf "$PACKAGE_PATH" "$PACKAGE_NAME"
+rm -f "$ZIP_PATH"
+(
+  cd "$STAGE_ROOT"
+  zip -qr "$ZIP_PATH" "$PACKAGE_NAME"
+)
+
 echo "Created package: $PACKAGE_PATH"
+echo "Created package: $ZIP_PATH"

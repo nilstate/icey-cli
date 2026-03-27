@@ -1,0 +1,17 @@
+{
+  "version": "@CLI_VERSION@",
+  "description": "Self-hosted real-time media server and CLI surface for icey.",
+  "homepage": "https://github.com/nilstate/icey-cli",
+  "license": "AGPL-3.0-or-later",
+  "url": "@WINDOWS_ZIP_URL@",
+  "hash": "@WINDOWS_ZIP_SHA256@",
+  "extract_dir": "icey-server-@CLI_VERSION@-Windows-x86_64",
+  "bin": "bin/icey-server.exe",
+  "checkver": {
+    "github": "https://github.com/nilstate/icey-cli"
+  },
+  "autoupdate": {
+    "url": "https://github.com/nilstate/icey-cli/releases/download/v$version/icey-server-$version-Windows-x86_64.zip",
+    "extract_dir": "icey-server-$version-Windows-x86_64"
+  }
+}

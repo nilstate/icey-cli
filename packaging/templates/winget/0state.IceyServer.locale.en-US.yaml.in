@@ -1,0 +1,12 @@
+PackageIdentifier: 0state.IceyServer
+PackageVersion: @CLI_VERSION@
+PackageLocale: en-US
+Publisher: 0state
+PublisherUrl: https://github.com/nilstate
+PublisherSupportUrl: https://github.com/nilstate/icey-cli/issues
+PackageName: icey-server
+PackageUrl: https://github.com/nilstate/icey-cli
+License: AGPL-3.0-or-later
+ShortDescription: Self-hosted real-time media server and CLI surface for icey.
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

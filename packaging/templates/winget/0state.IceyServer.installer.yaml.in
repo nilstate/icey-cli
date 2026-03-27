@@ -1,0 +1,13 @@
+PackageIdentifier: 0state.IceyServer
+PackageVersion: @CLI_VERSION@
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: bin/icey-server.exe
+        PortableCommandAlias: icey-server
+    InstallerUrl: @WINDOWS_ZIP_URL@
+    InstallerSha256: @WINDOWS_ZIP_SHA256@
+ManifestType: installer
+ManifestVersion: 1.9.0

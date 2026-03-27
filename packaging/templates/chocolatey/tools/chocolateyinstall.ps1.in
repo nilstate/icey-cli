@@ -1,0 +1,13 @@
+$ErrorActionPreference = 'Stop'
+
+$packageName = 'icey-server'
+$toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$packageArgs = @{
+  packageName    = $packageName
+  unzipLocation  = $toolsDir
+  url64bit       = '@WINDOWS_ZIP_URL@'
+  checksum64     = '@WINDOWS_ZIP_SHA256@'
+  checksumType64 = 'sha256'
+}
+
+Install-ChocolateyZipPackage @packageArgs

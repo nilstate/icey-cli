@@ -1,0 +1,59 @@
+{ lib
+, stdenv
+, fetchurl
+, cmake
+, nodejs
+, pkg-config
+, ffmpeg
+, openssl
+}:
+
+stdenv.mkDerivation rec {
+  pname = "icey-server";
+  version = "@CLI_VERSION@";
+
+  src = fetchurl {
+    url = "@ICEY_CLI_SOURCE_URL@";
+    hash = "@ICEY_CLI_SOURCE_SRI@";
+  };
+
+  iceySrc = fetchurl {
+    url = "@ICEY_SOURCE_URL@";
+    hash = "@ICEY_SOURCE_SRI@";
+  };
+
+  nativeBuildInputs = [ cmake nodejs pkg-config ];
+  buildInputs = [ ffmpeg openssl ];
+
+  unpackPhase = ''
+    tar -xzf $src
+    tar -xzf $iceySrc
+  '';
+
+  sourceRoot = "@ICEY_CLI_SOURCE_DIRNAME@";
+
+  buildPhase = ''
+    runHook preBuild
+    npm --prefix web ci
+    npm --prefix web run build
+    cmake -S . -B build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DICEY_SOURCE_DIR=$PWD/../@ICEY_SOURCE_DIRNAME@
+    cmake --build build -j1 --target icey-server
+    runHook postBuild
+  '';
+
+  installPhase = ''
+    runHook preInstall
+    cmake --install build --prefix $out --component apps
+    runHook postInstall
+  '';
+
+  meta = with lib; {
+    description = "Self-hosted real-time media server and CLI surface for icey";
+    homepage = "https://github.com/nilstate/icey-cli";
+    license = licenses.agpl3Plus;
+    platforms = platforms.linux ++ platforms.darwin;
+    mainProgram = "icey-server";
+  };
+}

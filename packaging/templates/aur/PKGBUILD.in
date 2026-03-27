@@ -1,0 +1,32 @@
+pkgname=icey-server
+pkgver=@CLI_VERSION@
+pkgrel=1
+pkgdesc='Self-hosted real-time media server and CLI surface for icey'
+arch=('x86_64')
+url='https://github.com/nilstate/icey-cli'
+license=('AGPL3')
+depends=('ffmpeg' 'openssl')
+makedepends=('cmake' 'gcc' 'make' 'nodejs' 'npm' 'pkgconf')
+source=(
+  "icey-cli-${pkgver}.tar.gz::@ICEY_CLI_SOURCE_URL@"
+  "icey-@ICEY_VERSION@.tar.gz::@ICEY_SOURCE_URL@"
+)
+sha256sums=(
+  '@ICEY_CLI_SOURCE_SHA256@'
+  '@ICEY_SOURCE_SHA256@'
+)
+
+build() {
+  cd "${srcdir}/@ICEY_CLI_SOURCE_DIRNAME@"
+  npm --prefix web ci
+  npm --prefix web run build
+  cmake -S . -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DICEY_SOURCE_DIR="${srcdir}/@ICEY_SOURCE_DIRNAME@"
+  cmake --build build -j1 --target icey-server
+}
+
+package() {
+  cd "${srcdir}/@ICEY_CLI_SOURCE_DIRNAME@"
+  cmake --install build --prefix "${pkgdir}/usr" --component apps
+}

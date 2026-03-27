@@ -1,0 +1,11 @@
+Package: @DEB_PACKAGE_NAME@
+Version: @CLI_VERSION@
+Section: net
+Priority: optional
+Architecture: @DEB_ARCH@
+Maintainer: 0state <oss@0state.com>
+Depends: @DEB_DEPENDS@
+Homepage: https://github.com/nilstate/icey-cli
+Description: Self-hosted real-time media server and CLI surface for icey
+ Single C++ binary for WebRTC media streaming, Symple signalling, TURN relay,
+ and the bundled browser UI.

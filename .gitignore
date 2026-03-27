@@ -3,6 +3,10 @@
 /.stage/
 /_CPack_Packages/
 /icey-server-*.tar.gz
+/icey-server-*.zip
+/icey-server_*.deb
+/icey-*-source.tar.gz
+/SHA256SUMS.txt
 /web/node_modules/
 /web/dist/
 /docker/recordings/*.mp4
