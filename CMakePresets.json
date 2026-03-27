@@ -1,0 +1,45 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Dev",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ICEY_SOURCE_DIR": "${sourceDir}/../icey"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ICEY_SOURCE_DIR": "${sourceDir}/../icey"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "targets": ["icey-server"],
+      "jobs": 1
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "targets": ["icey-server"],
+      "jobs": 1
+    }
+  ]
+}
+

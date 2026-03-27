@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-dev}"
+
+if [[ ! -f "$ICEY_SOURCE_DIR/CMakeLists.txt" ]]; then
+  echo "ICEY_SOURCE_DIR does not point to an icey source tree: $ICEY_SOURCE_DIR" >&2
+  exit 1
+fi
+
+cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DICEY_SOURCE_DIR="$ICEY_SOURCE_DIR"
+cmake --build "$BUILD_DIR" -j1 --target icey-server
+
+npm --prefix "$ROOT_DIR/web" ci
+npm --prefix "$ROOT_DIR/web" run build
+
+if [[ -z "${MEDIA_SERVER_BROWSER:-}" ]]; then
+  if command -v google-chrome >/dev/null 2>&1; then
+    export MEDIA_SERVER_BROWSER="$(command -v google-chrome)"
+  elif command -v chromium >/dev/null 2>&1; then
+    export MEDIA_SERVER_BROWSER="$(command -v chromium)"
+  fi
+fi
+
+npm --prefix "$ROOT_DIR/web" run test:smoke:chromium
+

@@ -1,0 +1,7 @@
+/build/
+/build-*/
+/web/node_modules/
+/web/dist/
+/docker/recordings/*.mp4
+.DS_Store
+

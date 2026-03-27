@@ -1,0 +1,21 @@
+name: icey-media-server
+
+services:
+  icey-server:
+    build:
+      context: ../..
+      dockerfile: icey-cli/docker/Dockerfile
+      args:
+        ICEY_SERVER_BINARY: ${ICEY_SERVER_BINARY:-icey-cli/build-dev/src/server/icey-server}
+    image: icey/icey-server:local
+    container_name: icey-server
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      ICEY_MODE: ${ICEY_MODE:-stream}
+      ICEY_PORT: ${ICEY_PORT:-4500}
+      ICEY_TURN_PORT: ${ICEY_TURN_PORT:-3478}
+      ICEY_SOURCE: ${ICEY_SOURCE:-/app/media/test.mp4}
+      ICEY_RECORD_DIR: ${ICEY_RECORD_DIR:-/app/recordings}
+    volumes:
+      - ./recordings:/app/recordings
