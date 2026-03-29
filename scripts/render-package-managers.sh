@@ -101,7 +101,7 @@ DEB_URL="${DEB_URL:-https://github.com/nilstate/icey-cli/releases/download/v${CL
 DEB_SHA256="${DEB_SHA256:-$(compute_or_placeholder "$DEB_PATH" "REPLACE_WITH_DEB_SHA256")}"
 WINDOWS_ZIP_URL="${WINDOWS_ZIP_URL:-https://github.com/nilstate/icey-cli/releases/download/v${CLI_VERSION}/icey-server-${CLI_VERSION}-Windows-x86_64.zip}"
 WINDOWS_ZIP_SHA256="${WINDOWS_ZIP_SHA256:-REPLACE_WITH_WINDOWS_ZIP_SHA256}"
-APT_BASE_URL="${APT_BASE_URL:-https://nilstate.github.io/icey-cli/apt}"
+APT_BASE_URL="${APT_BASE_URL:-https://nilstate.github.io/0state-packages/icey}"
 APT_SUITE="${APT_SUITE:-stable}"
 APT_COMPONENT="${APT_COMPONENT:-main}"
 

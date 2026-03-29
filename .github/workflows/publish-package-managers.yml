@@ -8,8 +8,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build-manifests:
@@ -56,47 +54,18 @@ jobs:
           CXX: g++-13
           ICEY_SOURCE_DIR: ${{ github.workspace }}/icey
           BUILD_DIR: ${{ github.workspace }}/build-release
-          APT_BASE_URL: https://nilstate.github.io/icey-cli/apt
+          APT_BASE_URL: https://nilstate.github.io/0state-packages/icey
         run: ./scripts/package-manager-check.sh
-
-      - name: Prepare Pages artifact
-        run: |
-          rm -rf .stage/pages
-          mkdir -p .stage/pages/apt
-          cp -R .stage/apt-repo/. .stage/pages/apt/
-          cat > .stage/pages/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-            <head>
-              <meta charset="utf-8">
-              <title>icey package repositories</title>
-            </head>
-            <body>
-              <p>APT repository: <a href="./apt/">./apt/</a></p>
-            </body>
-          </html>
-          EOF
 
       - uses: actions/upload-artifact@v4
         with:
           name: package-managers-rendered
           path: .stage/package-managers/rendered
 
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          path: .stage/pages
-
-  deploy-apt-pages:
-    runs-on: ubuntu-24.04
-    needs: build-manifests
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          name: apt-repo
+          path: .stage/apt-repo
 
   publish-homebrew:
     runs-on: ubuntu-24.04
@@ -148,6 +117,59 @@ jobs:
           git -C .stage/homebrew-tap add Formula/icey-server.rb
           git -C .stage/homebrew-tap commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
           git -C .stage/homebrew-tap push
+
+  publish-apt-repo:
+    runs-on: ubuntu-24.04
+    needs: build-manifests
+    steps:
+      - name: Check package repo credentials
+        id: gate
+        env:
+          PACKAGES_REPO_TOKEN: ${{ secrets.PACKAGES_REPO_TOKEN }}
+        run: |
+          if [[ -n "${PACKAGES_REPO_TOKEN:-}" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping APT publish: PACKAGES_REPO_TOKEN is not configured."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.publish == 'true'
+
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.publish == 'true'
+        with:
+          name: apt-repo
+          path: .stage/apt-repo
+
+      - name: Checkout package repo
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: nilstate/0state-packages
+          token: ${{ secrets.PACKAGES_REPO_TOKEN }}
+          path: .stage/0state-packages
+
+      - name: Publish APT repository
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          PACKAGES_REPO_DIR: ${{ github.workspace }}/.stage/0state-packages
+          APT_REPO_ROOT: ${{ github.workspace }}/.stage/apt-repo
+          APT_REPO_PATH: icey
+        run: ./scripts/publish-apt-repo.sh
+
+      - name: Commit package repo update
+        if: steps.gate.outputs.publish == 'true'
+        run: |
+          git -C .stage/0state-packages config user.name "github-actions[bot]"
+          git -C .stage/0state-packages config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git -C .stage/0state-packages diff --quiet; then
+            exit 0
+          fi
+          git -C .stage/0state-packages add .nojekyll index.html icey
+          git -C .stage/0state-packages commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
+          git -C .stage/0state-packages push
 
   publish-aur:
     runs-on: ubuntu-24.04

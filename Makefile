@@ -1,5 +1,5 @@
 .PHONY: configure build install package package-deb package-apt package-managers \
-	publish-homebrew publish-aur publish-apt-site web-install web-build \
+	publish-homebrew publish-aur publish-apt-repo publish-apt-site web-install web-build \
 	smoke-stream release-check docker-build
 
 ICEY_SOURCE_DIR ?= ../icey
@@ -34,8 +34,11 @@ publish-homebrew:
 publish-aur:
 	./scripts/publish-aur.sh
 
+publish-apt-repo:
+	./scripts/publish-apt-repo.sh
+
 publish-apt-site:
-	./scripts/publish-apt-site.sh
+	./scripts/publish-apt-repo.sh
 
 web-install:
 	$(NPM) ci
