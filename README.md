@@ -149,12 +149,14 @@ icey-server [options]
   -c, --config <path>     Config file (default: ./config.json)
   --host <host>           Bind host (default from config)
   --port <port>           HTTP/WS port (default: 4500)
+  --tls-cert <path>       TLS certificate for direct HTTPS/WSS serving
+  --tls-key <path>        TLS private key for direct HTTPS/WSS serving
   --turn-port <port>      TURN port (default: 3478)
   --turn-external-ip <ip> Public IP advertised by TURN
   --mode <mode>           stream|record|relay
   --source <path-or-url>  Media source file, device, or RTSP URL
   --record-dir <path>     Output directory for record mode (default: ./recordings)
-  --web-root <path>       Path to web UI dist/ directory
+  --web-root <path>       Path to web UI dist/ directory (packaged installs auto-fallback to share/icey-server/web)
   --loop                  Enable looping in stream mode
   --no-loop               Disable looping in stream mode
   --no-turn               Disable embedded TURN server
@@ -178,7 +180,7 @@ If the browser cannot even see the server peer, you have a signalling problem, n
 
 - `GET /api/health` returns a basic liveness payload
 - `GET /api/ready` returns preflight readiness and reports `503` when the runtime is not ready to serve
-- `GET /api/status` returns mode, version, session counts, uptime, and enabled intelligence branches
+- `GET /api/status` returns readiness, mode, version, peer identity, session counts, `uptimeSec`, and intelligence state
 - `GET /api/config` returns browser-facing ICE/TURN config plus runtime mode/version
 
 The binary also now supports `--help`, `--version`, and `--doctor`, and exposes `--host`, `--turn-external-ip`, `--loop`, and `--no-loop` for operator bring-up without editing JSON first.
