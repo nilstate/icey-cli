@@ -51,10 +51,7 @@ install(FILES
   DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/icey-server"
   COMPONENT apps)
 
-if(EXISTS "${ICEY_WEB_DIST_DIR}/index.html")
-  install(DIRECTORY "${ICEY_WEB_DIST_DIR}/"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server/web"
-    COMPONENT apps)
-else()
-  message(STATUS "Web dist not found at ${ICEY_WEB_DIST_DIR}; install will skip web assets")
-endif()
+install(DIRECTORY "${ICEY_WEB_DIST_DIR}/"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server/web"
+  COMPONENT apps
+  OPTIONAL)
