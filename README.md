@@ -4,12 +4,12 @@ Single C++ binary: WebRTC media streaming + Symple signalling + TURN relay + web
 
 No Node.js runtime, no third-party services. One binary, two ports (HTTP/WS + TURN).
 
-## Media Server Demo
+## icey Demo
 
-If you need the shortest end-to-end path, use the published [Media Server Demo](docker/README.md) image:
+If you need the shortest end-to-end path, use the [Docker demo path](docker/README.md):
 
 ```bash
-docker run --rm --network host 0state/icey-media-server-demo:latest
+docker run --rm --network host 0state/icey-server:latest
 ```
 
 Then open `http://localhost:4500` and click `Watch` on the `icey` peer.
@@ -41,6 +41,12 @@ Validated browser smoke:
 WebKit smoke is wired in the test harness, but the Playwright WebKit/WPE runtime on this Linux host is not treated as authoritative for publish-path support. Do not claim Safari support until it has been validated on Apple platforms.
 
 The `icey-server` target is built when the `webrtc` prerequisites are available: OpenSSL and FFmpeg must be installed or discoverable by CMake, and libdatachannel is fetched automatically.
+
+For a machine-readable preflight before startup, run:
+
+```bash
+./build/src/server/icey-server --doctor
+```
 
 ## Repo Workflow
 
@@ -96,6 +102,22 @@ That generates and validates:
 - `icey-server-apt-repo-<version>.tar.gz`
 - rendered manifests for Homebrew, AUR, Debian/APT, Nix, winget, Scoop, and Chocolatey
 
+## Canonical RTSP Path
+
+The launch wedge is `RTSP -> browser`.
+
+The repo ships a ready-to-edit example at `config.rtsp.example.json`:
+
+```bash
+cp config.rtsp.example.json config.local.json
+$EDITOR config.local.json
+./build/src/server/icey-server --config config.local.json --doctor
+./build/src/server/icey-server --config config.local.json
+```
+
+The installed layout also ships both `config.example.json` and
+`config.rtsp.example.json` under `share/icey-server/`.
+
 ## Modes
 
 - **stream** (default): server pushes file/camera to browser via WebRTC (H.264 + Opus)
@@ -136,6 +158,7 @@ icey-server [options]
   --loop                  Enable looping in stream mode
   --no-loop               Disable looping in stream mode
   --no-turn               Disable embedded TURN server
+  --doctor                Print preflight diagnostics and exit
   --version               Print version and exit
   -h, --help              Show this help and exit
 ```
@@ -154,10 +177,11 @@ If the browser cannot even see the server peer, you have a signalling problem, n
 ## Operator Endpoints
 
 - `GET /api/health` returns a basic liveness payload
+- `GET /api/ready` returns preflight readiness and reports `503` when the runtime is not ready to serve
 - `GET /api/status` returns mode, version, session counts, uptime, and enabled intelligence branches
 - `GET /api/config` returns browser-facing ICE/TURN config plus runtime mode/version
 
-The binary also now supports `--help` and `--version`, and exposes `--host`, `--turn-external-ip`, `--loop`, and `--no-loop` for operator bring-up without editing JSON first.
+The binary also now supports `--help`, `--version`, and `--doctor`, and exposes `--host`, `--turn-external-ip`, `--loop`, and `--no-loop` for operator bring-up without editing JSON first.
 
 ## Web UI development
 
@@ -213,6 +237,6 @@ available from 0state; see [LICENSE.md](LICENSE.md).
 
 ## See Also
 
-- [icey media-server stack recipe](https://github.com/nilstate/icey/blob/main/docs/recipes/media-server-stack.md)
+- [icey source-to-browser stack recipe](https://github.com/nilstate/icey/blob/main/docs/recipes/media-server-stack.md)
 - [icey WebRTC guide](https://github.com/nilstate/icey/blob/main/docs/modules/webrtc.md)
 - [icey TURN guide](https://github.com/nilstate/icey/blob/main/docs/modules/turn.md)

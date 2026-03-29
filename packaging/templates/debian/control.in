@@ -6,6 +6,6 @@ Architecture: @DEB_ARCH@
 Maintainer: 0state <oss@0state.com>
 Depends: @DEB_DEPENDS@
 Homepage: https://github.com/nilstate/icey-cli
-Description: Self-hosted real-time media server and CLI surface for icey
+Description: Self-hosted source-to-browser server built on icey
  Single C++ binary for WebRTC media streaming, Symple signalling, TURN relay,
  and the bundled browser UI.

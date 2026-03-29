@@ -3,6 +3,7 @@
 #include "config.h"
 #include "httpfactory.h"
 #include "media.h"
+#include "runtimeinfo.h"
 #include "turnserver.h"
 
 #include "icy/filesystem.h"
@@ -10,6 +11,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 
 namespace icy {
@@ -23,6 +25,35 @@ bool isRemoteStreamSource(const std::string& source)
         || source.rfind("udp:", 0) == 0
         || source.rfind("tcp:", 0) == 0
         || source.rfind("file:", 0) == 0;
+}
+
+bool isWildcardHost(const std::string& host)
+{
+    return host.empty() || host == "0.0.0.0" || host == "::";
+}
+
+std::string sourceKind(const std::string& source)
+{
+    if (source.empty())
+        return "none";
+    if (source.rfind("rtsp://", 0) == 0)
+        return "rtsp";
+    if (source.find("://") != std::string::npos)
+        return "url";
+    if (source.rfind("/dev/", 0) == 0)
+        return "device";
+    return "file";
+}
+
+json::Value makeCheck(const char* name,
+                      const char* result,
+                      const std::string& detail)
+{
+    json::Value check;
+    check["name"] = name;
+    check["result"] = result;
+    check["detail"] = detail;
+    return check;
 }
 
 } // namespace
@@ -40,24 +71,24 @@ MediaServerApp::~MediaServerApp() = default;
 
 bool MediaServerApp::start()
 {
-    if (!fs::exists(fs::makePath(_config.webRoot, "index.html"))) {
-        std::cerr << "Error: web UI not found under " << _config.webRoot << '\n';
-        return false;
-    }
-
-    if (_config.mode == Config::Mode::Stream && _config.source.empty()) {
-        std::cerr << "Error: stream mode requires --source or media.source in config.json\n";
-        return false;
-    }
-
-    if (_config.mode == Config::Mode::Stream &&
-        !_config.source.empty() &&
-        !isRemoteStreamSource(_config.source)) {
-        std::ifstream test(_config.source);
-        if (!test.is_open()) {
-            std::cerr << "Error: source file not found: " << _config.source << '\n';
-            return false;
+    const auto report = doctorJson();
+    if (!report.value("ready", false)) {
+        std::cerr << "Error: " << kServiceName << " preflight failed\n";
+        if (report.contains("checks")) {
+            for (const auto& check : report["checks"]) {
+                if (check.value("result", "") == "fail") {
+                    std::cerr << "  - " << check.value("name", "check")
+                              << ": " << check.value("detail", "") << '\n';
+                }
+            }
         }
+        std::cerr << "Run '" << kServiceName << " --doctor' for the full report.\n";
+        return false;
+    }
+
+    if (report.contains("warnings")) {
+        for (const auto& warning : report["warnings"])
+            std::cerr << "Warning: " << warning.get<std::string>() << '\n';
     }
 
     if (_config.mode == Config::Mode::Record) {
@@ -96,6 +127,7 @@ bool MediaServerApp::start()
         const auto peerAddress = peer.peer().address().toString();
         LInfo("Peer disconnected: ", peerAddress);
         _relay->unregisterSession(peerAddress);
+        std::lock_guard lock(_sessionMutex);
         _sessions.erase(peerAddress);
     };
 
@@ -107,19 +139,21 @@ bool MediaServerApp::start()
                           _config.turnPort,
                           _config.turnExternalIP,
                           _config.host,
+                          kProductName,
+                          kServiceName,
                           ICEY_SERVER_VERSION,
                           Config::modeName(_config.mode),
                           [this]() { return statusJson(); }
                       }));
 
-    _serverPeerId = "media-server";
+    _serverPeerId = kServerPeerId;
     _serverAddress = "icey|" + _serverPeerId;
 
     smpl::Peer vpeer;
     vpeer.setID(_serverPeerId);
-    vpeer.setUser("icey");
-    vpeer.setName("icey");
-    vpeer.setType("media-server");
+    vpeer.setUser(kProductName);
+    vpeer.setName(kServerPeerName);
+    vpeer.setType(kServerPeerType);
     vpeer["online"] = true;
     switch (_config.mode) {
     case Config::Mode::Stream:
@@ -153,6 +187,7 @@ bool MediaServerApp::start()
                 session = ensureSession(peerAddress);
             }
             else {
+                std::lock_guard lock(_sessionMutex);
                 auto found = _sessions.find(peerAddress);
                 if (found != _sessions.end())
                     session = found->second;
@@ -161,7 +196,7 @@ bool MediaServerApp::start()
                 session->onSignallingMessage(msg);
         });
 
-    std::cout << "Media server listening on "
+    std::cout << kServiceName << " listening on "
               << _config.host << ":" << _config.port << '\n';
     std::cout << "Web UI: http://localhost:" << _config.port << "/\n";
     if (_config.mode == Config::Mode::Stream && !_config.source.empty())
@@ -176,9 +211,133 @@ bool MediaServerApp::start()
 }
 
 
+json::Value MediaServerApp::doctorJson() const
+{
+    json::Value j;
+    json::Value checks = json::Value::array();
+    json::Value warnings = json::Value::array();
+
+    bool readyToRun = true;
+    bool degraded = false;
+    const auto sourceType = sourceKind(_config.source);
+    const auto webIndex = fs::makePath(_config.webRoot, "index.html");
+
+    j["product"] = kProductName;
+    j["service"] = kServiceName;
+    j["mode"] = Config::modeName(_config.mode);
+    j["source"]["value"] = _config.source;
+    j["source"]["kind"] = sourceType;
+    j["source"]["remote"] = isRemoteStreamSource(_config.source);
+    j["http"]["host"] = _config.host;
+    j["http"]["port"] = _config.port;
+    j["turn"]["enabled"] = _config.enableTurn;
+    j["turn"]["port"] = _config.turnPort;
+    j["turn"]["externalIp"] = _config.turnExternalIP;
+    j["web"]["root"] = _config.webRoot;
+
+    if (fs::exists(webIndex)) {
+        checks.push_back(makeCheck("web_root", "pass",
+            "Found bundled web UI at " + webIndex));
+    }
+    else {
+        checks.push_back(makeCheck("web_root", "fail",
+            "Missing bundled web UI at " + webIndex));
+        readyToRun = false;
+    }
+
+    if (_config.port == _config.turnPort && _config.enableTurn) {
+        checks.push_back(makeCheck("ports", "fail",
+            "HTTP/WS port and TURN port must not be the same"));
+        readyToRun = false;
+    }
+    else {
+        checks.push_back(makeCheck("ports", "pass",
+            "HTTP/WS on " + std::to_string(_config.port) +
+            ", TURN on " + std::to_string(_config.turnPort)));
+    }
+
+    if (_config.mode == Config::Mode::Stream) {
+        if (_config.source.empty()) {
+            checks.push_back(makeCheck("source", "fail",
+                "stream mode requires --source or media.source"));
+            readyToRun = false;
+        }
+        else if (!isRemoteStreamSource(_config.source)) {
+            std::ifstream test(_config.source);
+            if (test.is_open()) {
+                checks.push_back(makeCheck("source", "pass",
+                    "Found local media source at " + _config.source));
+            }
+            else {
+                checks.push_back(makeCheck("source", "fail",
+                    "Local media source not found: " + _config.source));
+                readyToRun = false;
+            }
+        }
+        else {
+            checks.push_back(makeCheck("source", "pass",
+                "Using remote media source " + _config.source));
+        }
+    }
+    else {
+        checks.push_back(makeCheck("source", "pass",
+            "No configured media source required for " +
+            std::string(Config::modeName(_config.mode)) + " mode"));
+    }
+
+    if (_config.enableTurn) {
+        if (isWildcardHost(_config.host) && _config.turnExternalIP.empty()) {
+            warnings.push_back(
+                "TURN externalIp is unset; remote NAT traversal may fail outside local or host-network testing.");
+            degraded = true;
+            checks.push_back(makeCheck("turn", "warn",
+                "TURN is enabled without externalIp while binding to a wildcard host"));
+        }
+        else {
+            checks.push_back(makeCheck("turn", "pass", "TURN relay is enabled"));
+        }
+    }
+    else {
+        warnings.push_back(
+            "TURN is disabled; direct local/LAN calls may work, but remote NAT traversal will be limited.");
+        degraded = true;
+        checks.push_back(makeCheck("turn", "warn", "TURN relay disabled"));
+    }
+
+    if (_config.mode != Config::Mode::Stream &&
+        (_config.vision.enabled || _config.speech.enabled)) {
+        warnings.push_back(
+            "Intelligence stages are only active in stream mode; current config leaves them configured but inactive.");
+        degraded = true;
+        checks.push_back(makeCheck("intelligence", "warn",
+            "Vision/speech are configured but stream mode is not active"));
+    }
+    else {
+        checks.push_back(makeCheck("intelligence", "pass",
+            std::string("vision=") + (_config.vision.enabled ? "on" : "off") +
+            ", speech=" + (_config.speech.enabled ? "on" : "off")));
+    }
+
+    j["checks"] = std::move(checks);
+    j["warnings"] = std::move(warnings);
+    j["ready"] = readyToRun;
+    j["status"] = readyToRun ? (degraded ? "degraded" : "ok") : "error";
+    return j;
+}
+
+
+bool MediaServerApp::ready() const
+{
+    return doctorJson().value("ready", false);
+}
+
+
 void MediaServerApp::shutdown()
 {
-    _sessions.clear();
+    {
+        std::lock_guard lock(_sessionMutex);
+        _sessions.clear();
+    }
     _relay->clear();
     _symple.removeVirtualPeer(_serverPeerId);
     _symple.stop();
@@ -189,24 +348,35 @@ void MediaServerApp::shutdown()
 
 json::Value MediaServerApp::statusJson() const
 {
+    json::Value j = doctorJson();
     size_t activeSessions = 0;
-    for (const auto& [_, session] : _sessions) {
-        if (session && session->active())
-            ++activeSessions;
+    size_t totalSessions = 0;
+    {
+        std::lock_guard lock(_sessionMutex);
+        totalSessions = _sessions.size();
+        for (const auto& [_, session] : _sessions) {
+            if (session && session->active())
+                ++activeSessions;
+        }
     }
 
-    json::Value j;
-    j["status"] = "ok";
-    j["service"] = "icey-server";
+    j["product"] = kProductName;
+    j["service"] = kServiceName;
     j["version"] = ICEY_SERVER_VERSION;
     j["mode"] = Config::modeName(_config.mode);
     j["host"] = _config.host;
     j["port"] = _config.port;
+    j["peer"]["id"] = _serverPeerId.empty() ? std::string(kServerPeerId) : _serverPeerId;
+    j["peer"]["name"] = kServerPeerName;
+    j["peer"]["type"] = kServerPeerType;
+    j["runtime"]["state"] = "running";
     j["turn"]["enabled"] = _config.enableTurn;
     j["turn"]["port"] = _config.turnPort;
-    j["sessions"]["total"] = static_cast<std::uint64_t>(_sessions.size());
+    j["turn"]["externalIp"] = _config.turnExternalIP;
+    j["sessions"]["total"] = static_cast<std::uint64_t>(totalSessions);
     j["sessions"]["active"] = static_cast<std::uint64_t>(activeSessions);
     j["stream"]["source"] = _config.source;
+    j["stream"]["sourceKind"] = sourceKind(_config.source);
     j["stream"]["loop"] = _config.loop;
     j["record"]["dir"] = _config.recordDir;
     j["intelligence"]["vision"] = _config.vision.enabled;
@@ -222,15 +392,21 @@ json::Value MediaServerApp::statusJson() const
 
 std::shared_ptr<MediaSession> MediaServerApp::ensureSession(const std::string& peerAddress)
 {
-    auto it = _sessions.find(peerAddress);
-    if (it != _sessions.end())
-        return it->second;
+    {
+        std::lock_guard lock(_sessionMutex);
+        auto it = _sessions.find(peerAddress);
+        if (it != _sessions.end())
+            return it->second;
+    }
 
     LInfo("Creating session for ", peerAddress);
     auto session = std::make_shared<MediaSession>(
         peerAddress, _symple, _serverAddress, _config, _relay.get());
     _relay->registerSession(session);
-    _sessions[peerAddress] = session;
+    {
+        std::lock_guard lock(_sessionMutex);
+        _sessions[peerAddress] = session;
+    }
     return session;
 }
 

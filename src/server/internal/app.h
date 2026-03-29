@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -27,6 +28,8 @@ public:
     ~MediaServerApp();
 
     bool start();
+    json::Value doctorJson() const;
+    bool ready() const;
     void shutdown();
     json::Value statusJson() const;
 
@@ -39,6 +42,7 @@ private:
     std::string _serverPeerId;
     std::string _serverAddress;
     std::unique_ptr<RelayController> _relay;
+    mutable std::mutex _sessionMutex;
     std::unordered_map<std::string, std::shared_ptr<MediaSession>> _sessions;
     std::chrono::steady_clock::time_point _startedAt{};
 };

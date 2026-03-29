@@ -27,12 +27,31 @@ if [[ ! -x "$STAGE_DIR/bin/icey-server" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$STAGE_DIR/share/icey-server/config.example.json" ]]; then
+  echo "Installed config example missing from staged layout: $STAGE_DIR/share/icey-server/config.example.json" >&2
+  exit 1
+fi
+
+if [[ ! -f "$STAGE_DIR/share/icey-server/config.rtsp.example.json" ]]; then
+  echo "Installed RTSP config example missing from staged layout: $STAGE_DIR/share/icey-server/config.rtsp.example.json" >&2
+  exit 1
+fi
+
 if [[ ! -f "$STAGE_DIR/share/icey-server/web/index.html" ]]; then
   echo "Installed web UI missing from staged layout: $STAGE_DIR/share/icey-server/web/index.html" >&2
   exit 1
 fi
 
 "$STAGE_DIR/bin/icey-server" --version >/dev/null
+
+if "$STAGE_DIR/bin/icey-server" --doctor >/dev/null 2>&1; then
+  echo "Expected default preflight to fail without a configured source" >&2
+  exit 1
+fi
+
+"$STAGE_DIR/bin/icey-server" \
+  --config "$STAGE_DIR/share/icey-server/config.rtsp.example.json" \
+  --doctor >/dev/null
 
 if [[ -z "${MEDIA_SERVER_BROWSER:-}" ]]; then
   if command -v google-chrome >/dev/null 2>&1; then

@@ -1,6 +1,6 @@
 {
   "version": "@CLI_VERSION@",
-  "description": "Self-hosted real-time media server and CLI surface for icey.",
+  "description": "Self-hosted source-to-browser server built on icey.",
   "homepage": "https://github.com/nilstate/icey-cli",
   "license": "AGPL-3.0-or-later",
   "url": "@WINDOWS_ZIP_URL@",

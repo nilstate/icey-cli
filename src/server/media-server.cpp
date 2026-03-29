@@ -34,6 +34,7 @@
 #include "icy/logger.h"
 #include "internal/app.h"
 #include "internal/config.h"
+#include "internal/runtimeinfo.h"
 
 #include <memory>
 #include <string>
@@ -47,7 +48,7 @@ constexpr const char* kDefaultConfigPath = "./config.json";
 
 void printVersion()
 {
-    std::cout << "icey-server " << ICEY_SERVER_VERSION << '\n';
+    std::cout << media_server::kServiceName << " " << ICEY_SERVER_VERSION << '\n';
 }
 
 void printUsage(const char* argv0)
@@ -66,6 +67,7 @@ void printUsage(const char* argv0)
         << "  --loop                        Enable looping in stream mode\n"
         << "  --no-loop                     Disable looping in stream mode\n"
         << "  --no-turn                     Disable embedded TURN server\n"
+        << "  --doctor                      Print preflight diagnostics and exit\n"
         << "  --version                     Print version and exit\n"
         << "  -h, --help                    Show this help and exit\n";
 }
@@ -95,6 +97,7 @@ int main(int argc, char** argv)
     Logger::instance().add(std::make_unique<ConsoleChannel>("debug", Level::Debug));
 
     std::string configPath = kDefaultConfigPath;
+    bool doctorMode = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -107,6 +110,9 @@ int main(int argc, char** argv)
             printVersion();
             Logger::destroy();
             return 0;
+        }
+        if (arg == "--doctor") {
+            doctorMode = true;
         }
         if ((arg == "-c" || arg == "--config") && i + 1 < argc) {
             configPath = argv[++i];
@@ -123,7 +129,7 @@ int main(int argc, char** argv)
         if ((arg == "-c" || arg == "--config") && !val.empty()) {
             ++i;
         }
-        else if ((arg == "-h" || arg == "--help") || arg == "--version") {
+        else if ((arg == "-h" || arg == "--help") || arg == "--version" || arg == "--doctor") {
         }
         else if (arg == "--host" && !val.empty()) {
             config.host = val;
@@ -180,6 +186,12 @@ int main(int argc, char** argv)
     }
 
     media_server::MediaServerApp app(config);
+    if (doctorMode) {
+        const auto report = app.doctorJson();
+        std::cout << report.dump(2) << '\n';
+        Logger::destroy();
+        return report.value("ready", false) ? 0 : 1;
+    }
     if (!app.start()) {
         Logger::destroy();
         return 1;

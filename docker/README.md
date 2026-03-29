@@ -1,8 +1,8 @@
-# Media Server Demo
+# icey-server Demo
 
 This is the fastest end-to-end path through the icey media stack:
 
-- C++ media server
+- C++ source-to-browser server
 - bundled web UI
 - Symple signalling over WebSocket
 - embedded TURN relay
@@ -14,12 +14,12 @@ One command. One URL. One click.
 
 ## Express Path
 
-The fastest way to try the Media Server Demo is the published image.
+The fastest way to try the demo is the published image.
 
 This path targets Linux with host networking:
 
 ```bash
-docker run --rm --network host 0state/icey-media-server-demo:latest
+docker run --rm --network host 0state/icey-server:latest
 ```
 
 Then open:
@@ -52,7 +52,7 @@ The published image and the local Compose build package:
 - the production web UI build from `icey-cli/web/`
 - the sample media file at `data/test.mp4`
 
-The published image is available as `0state/icey-media-server-demo:latest`.
+The published image is available as `0state/icey-server:latest`.
 
 The local Compose path reuses the existing local build artifacts instead of recompiling inside Docker, so rebuilds stay cheap.
 
@@ -70,7 +70,7 @@ The server starts in `stream` mode by default and listens on:
 
 ## Why Host Networking
 
-This Media Server Demo is meant to prove real WebRTC and TURN behavior, not just serve HTML.
+This demo is meant to prove real WebRTC and TURN behavior, not just serve HTML.
 
 Docker bridge networking hides the host-facing ICE and relay addresses the browser needs. `network_mode: host` keeps the advertised addresses honest on Linux, which is the path that consistently proves the full stack.
 
@@ -81,8 +81,9 @@ You can switch the app mode or input source with environment variables.
 Published image examples:
 
 ```bash
-docker run --rm --network host -e ICEY_MODE=record -v "$(pwd)/recordings:/app/recordings" 0state/icey-media-server-demo:latest
-docker run --rm --network host -e ICEY_MODE=relay 0state/icey-media-server-demo:latest
+docker run --rm --network host -e ICEY_MODE=record -v "$(pwd)/recordings:/app/recordings" 0state/icey-server:latest
+docker run --rm --network host -e ICEY_MODE=relay 0state/icey-server:latest
+docker run --rm --network host -e ICEY_SOURCE=rtsp://camera.local/stream1 -e ICEY_LOOP=0 0state/icey-server:latest
 ```
 
 Compose examples:
@@ -103,16 +104,17 @@ For the published image path, `record` mode writes wherever you bind-mount `/app
 
 ## Notes
 
-- This is the canonical Media Server Demo for the self-hosted media stack.
-- The express path is `docker run --rm --network host 0state/icey-media-server-demo:latest`.
+- This is the canonical `icey-server` demo for the self-hosted media stack.
+- The express path is `docker run --rm --network host 0state/icey-server:latest`.
 - The source path is `docker compose up --build` from this directory.
 - For direct local use, open `http://localhost:4500`.
 - The local Compose build expects the existing `icey-cli/build-dev/src/server/icey-server` binary and `icey-cli/web/dist/` output to be present.
 - The default local Compose context assumes sibling `icey-cli/` and `icey/` checkouts so the demo media file can be copied from `icey/data/test.mp4`.
 - If port `4500` or `3478` is already busy on the host, free it first or override `ICEY_PORT` / `ICEY_TURN_PORT`.
+- For remote NAT testing, set `ICEY_TURN_EXTERNAL_IP` so embedded TURN advertises the right public address.
 - Docker Desktop host networking is not the primary target here. For non-Linux hosts, use the native app README first.
 
 ## Related
 
 - [App README](../README.md)
-- The `icey` core repo `docs/recipes/media-server-stack.md` recipe
+- The `icey` core repo `docs/recipes/media-server-stack.md` source-to-browser recipe

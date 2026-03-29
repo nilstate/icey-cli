@@ -1,0 +1,55 @@
+{
+  "http": {
+    "host": "0.0.0.0",
+    "port": 4500
+  },
+  "turn": {
+    "enabled": true,
+    "port": 3478,
+    "realm": "0state.com",
+    "externalIp": ""
+  },
+  "media": {
+    "mode": "stream",
+    "source": "rtsp://camera.local/stream1",
+    "recordDir": "./recordings",
+    "loop": false,
+    "video": {
+      "codec": "libx264",
+      "width": 1280,
+      "height": 720,
+      "fps": 30,
+      "bitrate": 2000000
+    },
+    "audio": {
+      "codec": "libopus",
+      "channels": 2,
+      "sampleRate": 48000,
+      "bitrate": 128000
+    },
+    "intelligence": {
+      "vision": {
+        "enabled": true,
+        "everyNthFrame": 6,
+        "minIntervalUsec": 200000,
+        "queueDepth": 8,
+        "motion": {
+          "gridWidth": 32,
+          "gridHeight": 18,
+          "warmupFrames": 2,
+          "threshold": 0.08,
+          "cooldownUsec": 500000
+        }
+      },
+      "speech": {
+        "enabled": false,
+        "queueDepth": 32,
+        "startThreshold": 0.045,
+        "stopThreshold": 0.02,
+        "minSilenceUsec": 250000,
+        "updateIntervalUsec": 250000
+      }
+    }
+  },
+  "webRoot": "./web/dist"
+}

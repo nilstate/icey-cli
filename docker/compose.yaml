@@ -1,4 +1,4 @@
-name: icey-media-server
+name: icey-server
 
 services:
   icey-server:
@@ -12,9 +12,12 @@ services:
     network_mode: host
     restart: unless-stopped
     environment:
+      ICEY_HOST: ${ICEY_HOST:-0.0.0.0}
       ICEY_MODE: ${ICEY_MODE:-stream}
+      ICEY_LOOP: ${ICEY_LOOP:-auto}
       ICEY_PORT: ${ICEY_PORT:-4500}
       ICEY_TURN_PORT: ${ICEY_TURN_PORT:-3478}
+      ICEY_TURN_EXTERNAL_IP: ${ICEY_TURN_EXTERNAL_IP:-}
       ICEY_SOURCE: ${ICEY_SOURCE:-/app/media/test.mp4}
       ICEY_RECORD_DIR: ${ICEY_RECORD_DIR:-/app/recordings}
     volumes:

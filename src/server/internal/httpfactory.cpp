@@ -117,9 +117,13 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
             json::Value j;
             if (request.getURI() == "/api/config") {
                 j["status"] = "ok";
-                j["service"] = "icey-server";
+                j["product"] = _runtimeConfig.product;
+                j["service"] = _runtimeConfig.service;
                 j["version"] = _runtimeConfig.version;
                 j["mode"] = _runtimeConfig.mode;
+                j["peer"]["id"] = kServerPeerId;
+                j["peer"]["name"] = kServerPeerName;
+                j["peer"]["type"] = kServerPeerType;
                 j["turn"]["enabled"] = _runtimeConfig.enableTurn;
                 j["turn"]["host"] = _runtimeConfig.turnExternalIP.empty()
                     ? _runtimeConfig.host
@@ -133,8 +137,17 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
             }
             else if (request.getURI() == "/api/health") {
                 j["status"] = "ok";
-                j["service"] = "icey-server";
+                j["product"] = _runtimeConfig.product;
+                j["service"] = _runtimeConfig.service;
                 j["version"] = _runtimeConfig.version;
+            }
+            else if (request.getURI() == "/api/ready") {
+                if (_runtimeConfig.statusProvider)
+                    j = _runtimeConfig.statusProvider();
+                else
+                    j["ready"] = false;
+                if (!j.value("ready", false))
+                    response.setStatus(http::StatusCode::Unavailable);
             }
             else if (request.getURI() == "/api/status") {
                 if (_runtimeConfig.statusProvider)

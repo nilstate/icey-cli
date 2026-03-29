@@ -118,7 +118,7 @@ render_template \
 
 cat > "$OUT_DIR/aur/.SRCINFO" <<EOF
 pkgbase = icey-server
-	pkgdesc = Self-hosted real-time media server and CLI surface for icey
+	pkgdesc = Self-hosted source-to-browser server built on icey
 	pkgver = $CLI_VERSION
 	pkgrel = 1
 	url = https://github.com/nilstate/icey-cli

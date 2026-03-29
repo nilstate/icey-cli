@@ -1,7 +1,7 @@
 pkgname=icey-server
 pkgver=@CLI_VERSION@
 pkgrel=1
-pkgdesc='Self-hosted real-time media server and CLI surface for icey'
+pkgdesc='Self-hosted source-to-browser server built on icey'
 arch=('x86_64')
 url='https://github.com/nilstate/icey-cli'
 license=('AGPL3')

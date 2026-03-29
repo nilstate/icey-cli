@@ -5,11 +5,39 @@
 
 #include <cctype>
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 
 
 namespace icy {
 namespace media_server {
+namespace {
+
+bool isRemoteStreamSource(const std::string& source)
+{
+    return source.find("://") != std::string::npos
+        || source.rfind("rtsp:", 0) == 0
+        || source.rfind("udp:", 0) == 0
+        || source.rfind("tcp:", 0) == 0
+        || source.rfind("file:", 0) == 0;
+}
+
+std::string resolvePathFromConfig(const std::string& configPath,
+                                  const std::string& value,
+                                  bool allowRemote = false)
+{
+    if (value.empty())
+        return value;
+    if (allowRemote && isRemoteStreamSource(value))
+        return value;
+    if (value.rfind("/dev/", 0) == 0)
+        return value;
+    if (std::filesystem::path(value).is_absolute())
+        return value;
+    return fs::normalize(fs::makePath(fs::dirname(configPath), value));
+}
+
+} // namespace
 
 
 Config::Mode Config::parseMode(const std::string& s)
@@ -109,6 +137,10 @@ Config loadConfig(const std::string& path)
     }
     if (j.contains("webRoot"))
         c.webRoot = j["webRoot"].get<std::string>();
+
+    c.source = resolvePathFromConfig(path, c.source, true);
+    c.recordDir = resolvePathFromConfig(path, c.recordDir);
+    c.webRoot = resolvePathFromConfig(path, c.webRoot);
 
     return c;
 }

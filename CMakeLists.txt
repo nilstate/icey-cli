@@ -37,9 +37,12 @@ endif()
 
 add_subdirectory(src/server)
 
-install(FILES "${PROJECT_SOURCE_DIR}/config.json"
+install(FILES "${PROJECT_SOURCE_DIR}/packaging/config.example.json"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server"
-  RENAME config.example.json
+  COMPONENT apps)
+
+install(FILES "${PROJECT_SOURCE_DIR}/packaging/config.rtsp.example.json"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/icey-server"
   COMPONENT apps)
 
 install(FILES

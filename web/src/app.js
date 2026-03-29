@@ -99,6 +99,9 @@ function buildIceServers (config) {
 
 function formatConnectionInfo (url, user, runtimeConfig) {
   const parts = [url, user]
+  if (runtimeConfig?.service) {
+    parts.push(runtimeConfig.service)
+  }
   if (runtimeConfig?.mode) {
     parts.push(runtimeConfig.mode)
   }
@@ -112,9 +115,10 @@ async function connect () {
   const url = getWsUrl()
   $connInfo.textContent = `Connecting to ${url}...`
   const runtimeConfig = await fetchRuntimeConfig()
+  const productName = runtimeConfig?.product || 'icey'
   document.title = runtimeConfig?.mode
-    ? `icey | ${runtimeConfig.mode}`
-    : 'icey'
+    ? `${productName} | ${runtimeConfig.mode}`
+    : productName
 
   const user = 'viewer-' + Math.random().toString(36).slice(2, 6)
 
@@ -166,7 +170,7 @@ async function connect () {
   })
 
   calls.on('incoming', (peerId, msg) => {
-    // Auto-accept incoming calls from the media server
+    // Auto-accept incoming calls from the server peer.
     console.log('Incoming call from', peerId)
     calls.accept()
   })
@@ -520,6 +524,6 @@ function setOnline (online) {
 // ---------------------------------------------------------------------------
 
 connect().catch((err) => {
-  console.error('Failed to initialize media server UI:', err)
+  console.error('Failed to initialize icey UI:', err)
   $connInfo.textContent = 'Initialization failed'
 })

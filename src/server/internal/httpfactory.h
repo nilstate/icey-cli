@@ -3,6 +3,7 @@
 
 #include "icy/http/server.h"
 #include "icy/json/json.h"
+#include "runtimeinfo.h"
 
 #include <functional>
 #include <memory>
@@ -22,6 +23,8 @@ public:
         uint16_t turnPort = 3478;
         std::string turnExternalIP;
         std::string host;
+        std::string product = kProductName;
+        std::string service = kServiceName;
         std::string version;
         std::string mode;
         std::function<json::Value()> statusProvider;
