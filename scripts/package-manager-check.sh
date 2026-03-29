@@ -9,6 +9,8 @@ ICEY_VERSION="$(tr -d '[:space:]' < "$ICEY_SOURCE_DIR/VERSION")"
 LINUX_BASENAME="icey-server-${CLI_VERSION}-Linux-x86_64"
 LINUX_TARBALL="$ROOT_DIR/${LINUX_BASENAME}.tar.gz"
 LINUX_ZIP="$ROOT_DIR/${LINUX_BASENAME}.zip"
+LATEST_LINUX_TARBALL="$ROOT_DIR/icey-server-Linux-x86_64.tar.gz"
+LATEST_LINUX_ZIP="$ROOT_DIR/icey-server-Linux-x86_64.zip"
 CLI_SOURCE_ARCHIVE="$ROOT_DIR/icey-cli-${CLI_VERSION}-source.tar.gz"
 ICEY_SOURCE_ARCHIVE="$ROOT_DIR/icey-${ICEY_VERSION}-source.tar.gz"
 DEB_PATH="$ROOT_DIR/icey-server_${CLI_VERSION}_amd64.deb"
@@ -26,6 +28,8 @@ ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" \
 
 tar -tzf "$LINUX_TARBALL" >/dev/null
 unzip -Z1 "$LINUX_ZIP" >/dev/null
+tar -tzf "$LATEST_LINUX_TARBALL" >/dev/null
+unzip -Z1 "$LATEST_LINUX_ZIP" >/dev/null
 dpkg-deb --contents "$DEB_PATH" >/dev/null
 tar -tzf "$APT_REPO_ARCHIVE" >/dev/null
 
@@ -37,5 +41,6 @@ test -f "$RENDERED_DIR/scoop/icey-server.json"
 test -f "$RENDERED_DIR/chocolatey/icey-server.nuspec"
 test -f "$RENDERED_DIR/winget/0state.IceyServer.installer.yaml"
 test -f "$RENDERED_DIR/SHA256SUMS.txt"
+test -f "$ROOT_DIR/flake.nix"
 
 echo "Package manager cutover artifacts validated."

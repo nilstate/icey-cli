@@ -1,0 +1,177 @@
+name: Publish Package Managers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-manifests:
+    runs-on: ubuntu-24.04
+    outputs:
+      cli_version: ${{ steps.versions.outputs.cli_version }}
+      icey_version: ${{ steps.versions.outputs.icey_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout icey
+        uses: actions/checkout@v4
+        with:
+          repository: nilstate/icey
+          path: icey
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-13 g++-13 \
+            cmake \
+            dpkg-dev \
+            libssl-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+            unzip zip
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Read versions
+        id: versions
+        run: |
+          echo "cli_version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          echo "icey_version=$(tr -d '[:space:]' < icey/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and render package managers
+        env:
+          CC: gcc-13
+          CXX: g++-13
+          ICEY_SOURCE_DIR: ${{ github.workspace }}/icey
+          BUILD_DIR: ${{ github.workspace }}/build-release
+          APT_BASE_URL: https://nilstate.github.io/icey-cli/apt
+        run: ./scripts/package-manager-check.sh
+
+      - name: Prepare Pages artifact
+        run: |
+          rm -rf .stage/pages
+          mkdir -p .stage/pages/apt
+          cp -R .stage/apt-repo/. .stage/pages/apt/
+          cat > .stage/pages/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>icey package repositories</title>
+            </head>
+            <body>
+              <p>APT repository: <a href="./apt/">./apt/</a></p>
+            </body>
+          </html>
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-managers-rendered
+          path: .stage/package-managers/rendered
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .stage/pages
+
+  deploy-apt-pages:
+    runs-on: ubuntu-24.04
+    needs: build-manifests
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  publish-homebrew:
+    runs-on: ubuntu-24.04
+    needs: build-manifests
+    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-managers-rendered
+          path: .stage/package-managers/rendered
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: nilstate/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: .stage/homebrew-tap
+
+      - name: Publish formula
+        env:
+          TAP_REPO_DIR: ${{ github.workspace }}/.stage/homebrew-tap
+        run: ./scripts/publish-homebrew.sh
+
+      - name: Commit formula update
+        run: |
+          git -C .stage/homebrew-tap config user.name "github-actions[bot]"
+          git -C .stage/homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git -C .stage/homebrew-tap diff --quiet; then
+            exit 0
+          fi
+          git -C .stage/homebrew-tap add Formula/icey-server.rb
+          git -C .stage/homebrew-tap commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
+          git -C .stage/homebrew-tap push
+
+  publish-aur:
+    runs-on: ubuntu-24.04
+    needs: build-manifests
+    if: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-managers-rendered
+          path: .stage/package-managers/rendered
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+
+      - name: Checkout AUR package
+        run: git clone ssh://aur@aur.archlinux.org/icey-server.git .stage/aur-repo
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o IdentitiesOnly=yes
+
+      - name: Publish AUR package
+        env:
+          AUR_REPO_DIR: ${{ github.workspace }}/.stage/aur-repo
+        run: ./scripts/publish-aur.sh
+
+      - name: Commit AUR update
+        run: |
+          git -C .stage/aur-repo config user.name "github-actions[bot]"
+          git -C .stage/aur-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git -C .stage/aur-repo diff --quiet; then
+            exit 0
+          fi
+          git -C .stage/aur-repo add PKGBUILD .SRCINFO
+          git -C .stage/aur-repo commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes' \
+            git -C .stage/aur-repo push

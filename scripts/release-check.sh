@@ -49,8 +49,28 @@ if "$STAGE_DIR/bin/icey-server" --doctor >/dev/null 2>&1; then
   exit 1
 fi
 
+printf '{ invalid json }\n' > "$STAGE_DIR/invalid-config.json"
+if "$STAGE_DIR/bin/icey-server" \
+  --config "$STAGE_DIR/invalid-config.json" \
+  --doctor >/dev/null 2>&1; then
+  echo "Expected invalid config preflight to fail" >&2
+  exit 1
+fi
+
 "$STAGE_DIR/bin/icey-server" \
   --config "$STAGE_DIR/share/icey-server/config.rtsp.example.json" \
+  --doctor >/dev/null
+
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "$STAGE_DIR/tls-key.pem" \
+  -out "$STAGE_DIR/tls-cert.pem" \
+  -days 1 \
+  -subj "/CN=localhost" >/dev/null 2>&1
+
+"$STAGE_DIR/bin/icey-server" \
+  --config "$STAGE_DIR/share/icey-server/config.rtsp.example.json" \
+  --tls-cert "$STAGE_DIR/tls-cert.pem" \
+  --tls-key "$STAGE_DIR/tls-key.pem" \
   --doctor >/dev/null
 
 if [[ -z "${MEDIA_SERVER_BROWSER:-}" ]]; then

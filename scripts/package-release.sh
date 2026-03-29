@@ -10,6 +10,8 @@ STAGE_ROOT="${STAGE_ROOT:-$ROOT_DIR/.stage/package-release}"
 PACKAGE_ROOT="$STAGE_ROOT/$PACKAGE_NAME"
 PACKAGE_PATH="$ROOT_DIR/${PACKAGE_NAME}.tar.gz"
 ZIP_PATH="$ROOT_DIR/${PACKAGE_NAME}.zip"
+LATEST_PACKAGE_PATH="$ROOT_DIR/icey-server-$(uname -s)-$(uname -m).tar.gz"
+LATEST_ZIP_PATH="$ROOT_DIR/icey-server-$(uname -s)-$(uname -m).zip"
 
 if [[ ! -f "$ICEY_SOURCE_DIR/CMakeLists.txt" ]]; then
   echo "ICEY_SOURCE_DIR does not point to an icey source tree: $ICEY_SOURCE_DIR" >&2
@@ -46,6 +48,10 @@ rm -f "$ZIP_PATH"
   cd "$STAGE_ROOT"
   zip -qr "$ZIP_PATH" "$PACKAGE_NAME"
 )
+cp "$PACKAGE_PATH" "$LATEST_PACKAGE_PATH"
+cp "$ZIP_PATH" "$LATEST_ZIP_PATH"
 
 echo "Created package: $PACKAGE_PATH"
 echo "Created package: $ZIP_PATH"
+echo "Created stable alias: $LATEST_PACKAGE_PATH"
+echo "Created stable alias: $LATEST_ZIP_PATH"

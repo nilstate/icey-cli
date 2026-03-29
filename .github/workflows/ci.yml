@@ -47,6 +47,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc-13 \
             -DCMAKE_CXX_COMPILER=g++-13 \
+            -DENABLE_WARNINGS_ARE_ERRORS=ON \
             -DICEY_SOURCE_DIR=$GITHUB_WORKSPACE/icey
 
       - name: Build

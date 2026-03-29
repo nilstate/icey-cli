@@ -17,6 +17,18 @@ target_compile_definitions(icey-server PRIVATE
   ICEY_SERVER_VERSION="${PROJECT_VERSION}"
 )
 
+if(MSVC)
+  target_compile_options(icey-server PRIVATE /W4)
+  if(ENABLE_WARNINGS_ARE_ERRORS)
+    target_compile_options(icey-server PRIVATE /WX)
+  endif()
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(icey-server PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  if(ENABLE_WARNINGS_ARE_ERRORS)
+    target_compile_options(icey-server PRIVATE -Werror)
+  endif()
+endif()
+
 target_include_directories(icey-server PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/internal
 )

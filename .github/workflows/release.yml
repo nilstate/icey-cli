@@ -55,6 +55,8 @@ jobs:
             icey-*-source.tar.gz
             icey-server-*-Linux-x86_64.tar.gz
             icey-server-*-Linux-x86_64.zip
+            icey-server-Linux-x86_64.tar.gz
+            icey-server-Linux-x86_64.zip
             icey-server_*.deb
             icey-server-apt-repo-*.tar.gz
 

@@ -1,5 +1,6 @@
 .PHONY: configure build install package package-deb package-apt package-managers \
-	web-install web-build smoke-stream release-check docker-build
+	publish-homebrew publish-aur publish-apt-site web-install web-build \
+	smoke-stream release-check docker-build
 
 ICEY_SOURCE_DIR ?= ../icey
 BUILD_DIR ?= build-dev
@@ -26,6 +27,15 @@ package-apt:
 
 package-managers:
 	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) ./scripts/package-manager-check.sh
+
+publish-homebrew:
+	./scripts/publish-homebrew.sh
+
+publish-aur:
+	./scripts/publish-aur.sh
+
+publish-apt-site:
+	./scripts/publish-apt-site.sh
 
 web-install:
 	$(NPM) ci
