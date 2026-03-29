@@ -31,7 +31,9 @@
 
 
 #include "icy/application.h"
+#include "icy/filesystem.h"
 #include "icy/logger.h"
+#include "icy/platform.h"
 #include "internal/app.h"
 #include "internal/config.h"
 #include "internal/runtimeinfo.h"
@@ -65,7 +67,8 @@ void printUsage(const char* argv0)
         << "  --mode <mode>                 stream|record|relay\n"
         << "  --source <path-or-url>        Media source file, device, or RTSP URL\n"
         << "  --record-dir <path>           Output directory for record mode\n"
-        << "  --web-root <path>             Built web UI directory\n"
+        << "  --web-root <path>             Built web UI directory (defaults to ./web/dist,\n"
+        << "                                falls back to packaged share/icey-server/web)\n"
         << "  --loop                        Enable looping in stream mode\n"
         << "  --no-loop                     Disable looping in stream mode\n"
         << "  --no-turn                     Disable embedded TURN server\n"
@@ -89,6 +92,23 @@ bool parseModeArg(const std::string& value, media_server::Config::Mode& out)
         return true;
     }
     return false;
+}
+
+void resolvePackagedWebRoot(media_server::Config& config)
+{
+    if (config.webRoot != "./web/dist")
+        return;
+
+    const auto defaultIndex = fs::makePath(config.webRoot, "index.html");
+    if (fs::exists(defaultIndex))
+        return;
+
+    const auto exeDir = fs::dirname(getExePath());
+    const auto packagedWebRoot = fs::normalize(
+        fs::makePath(fs::makePath(exeDir, ".."), "share/icey-server/web"));
+    const auto packagedIndex = fs::makePath(packagedWebRoot, "index.html");
+    if (fs::exists(packagedIndex))
+        config.webRoot = packagedWebRoot;
 }
 
 } // namespace
@@ -195,6 +215,8 @@ int main(int argc, char** argv)
             return 1;
         }
     }
+
+    resolvePackagedWebRoot(config);
 
     media_server::MediaServerApp app(config, configLoad);
     if (doctorMode) {
