@@ -16,6 +16,7 @@ ICEY_SOURCE_ARCHIVE="$ROOT_DIR/icey-${ICEY_VERSION}-source.tar.gz"
 DEB_PATH="$ROOT_DIR/icey-server_${CLI_VERSION}_amd64.deb"
 APT_REPO_ARCHIVE="$ROOT_DIR/icey-server-apt-repo-${CLI_VERSION}.tar.gz"
 RENDERED_DIR="$ROOT_DIR/.stage/package-managers/rendered"
+APT_PUBLIC_DIR="$ROOT_DIR/.stage/apt-public"
 
 ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/build-source-archives.sh"
 ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/package-release.sh"
@@ -42,5 +43,12 @@ test -f "$RENDERED_DIR/chocolatey/icey-server.nuspec"
 test -f "$RENDERED_DIR/winget/0state.IceyServer.installer.yaml"
 test -f "$RENDERED_DIR/SHA256SUMS.txt"
 test -f "$ROOT_DIR/flake.nix"
+
+if [[ -n "${APT_GPG_KEY_ID:-}" ]]; then
+  test -f "$ROOT_DIR/.stage/apt-repo/dists/stable/InRelease"
+  test -f "$ROOT_DIR/.stage/apt-repo/dists/stable/Release.gpg"
+  test -f "$APT_PUBLIC_DIR/icey-archive-keyring.asc"
+  test -f "$APT_PUBLIC_DIR/icey-archive-keyring.gpg"
+fi
 
 echo "Package manager cutover artifacts validated."

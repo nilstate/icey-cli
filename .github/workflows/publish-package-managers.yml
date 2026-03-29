@@ -31,6 +31,7 @@ jobs:
             gcc-13 g++-13 \
             cmake \
             dpkg-dev \
+            gnupg \
             libssl-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
             unzip zip
@@ -47,6 +48,39 @@ jobs:
         run: |
           echo "cli_version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
           echo "icey_version=$(tr -d '[:space:]' < icey/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Check APT signing credentials
+        id: apt-signing
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [[ -n "${APT_GPG_PRIVATE_KEY:-}" ]]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "Proceeding without APT repository signing."
+          fi
+
+      - name: Import APT signing key
+        if: steps.apt-signing.outputs.sign == 'true'
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/apt-gnupg"
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+          printf '%s\n' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          key_id="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^sec:/ { print $5; exit }')"
+          if [[ -z "$key_id" ]]; then
+            echo "Failed to discover imported APT signing key" >&2
+            exit 1
+          fi
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "APT_GPG_KEY_ID=$key_id" >> "$GITHUB_ENV"
+          if [[ -n "${APT_GPG_PASSPHRASE:-}" ]]; then
+            echo "APT_GPG_PASSPHRASE=$APT_GPG_PASSPHRASE" >> "$GITHUB_ENV"
+          fi
 
       - name: Build and render package managers
         env:
@@ -65,7 +99,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: apt-repo
-          path: .stage/apt-repo
+          path: |
+            .stage/apt-repo
+            .stage/apt-public
 
   publish-homebrew:
     runs-on: ubuntu-24.04
@@ -143,6 +179,12 @@ jobs:
           name: apt-repo
           path: .stage/apt-repo
 
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.publish == 'true'
+        with:
+          name: package-managers-rendered
+          path: .stage/package-managers/rendered
+
       - name: Checkout package repo
         if: steps.gate.outputs.publish == 'true'
         uses: actions/checkout@v4
@@ -155,8 +197,11 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         env:
           PACKAGES_REPO_DIR: ${{ github.workspace }}/.stage/0state-packages
-          APT_REPO_ROOT: ${{ github.workspace }}/.stage/apt-repo
+          APT_REPO_ROOT: ${{ github.workspace }}/.stage/apt-repo/apt-repo
+          APT_PUBLIC_DIR: ${{ github.workspace }}/.stage/apt-repo/apt-public
+          APT_LIST_SOURCE: ${{ github.workspace }}/.stage/package-managers/rendered/apt/icey-server.list
           APT_REPO_PATH: icey
+          APT_BASE_URL: https://apt.0state.com/icey
         run: ./scripts/publish-apt-repo.sh
 
       - name: Commit package repo update

@@ -15,6 +15,8 @@ The package model is split intentionally:
 - `Homebrew`, `AUR`, and `Nix` are source-build package managers. They build
   `icey-server` from `icey-cli` plus the matching `icey` source archive.
 - `Debian / APT` consumes the generated Linux `amd64` binary package.
+- Published APT repositories can also ship a signing key plus
+  `InRelease` / `Release.gpg` metadata when `APT_GPG_KEY_ID` is configured.
 - `winget`, `Scoop`, and `Chocolatey` consume the planned Windows portable zip
   artifact.
 
