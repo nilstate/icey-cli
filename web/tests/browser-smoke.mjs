@@ -650,6 +650,7 @@ async function main() {
   const webRoot = path.resolve(__dirname, '../dist')
   const sourceFile = await findFirstExisting([
     process.env.MEDIA_SERVER_SOURCE,
+    candidatePath('icey/data/test.mp4'),
     candidatePath('../icey/data/test.mp4'),
     candidatePath('data/test.mp4')
   ].filter(Boolean), 'media source')
