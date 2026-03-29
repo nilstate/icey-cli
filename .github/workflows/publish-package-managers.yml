@@ -147,10 +147,10 @@ jobs:
         run: |
           git -C .stage/homebrew-tap config user.name "github-actions[bot]"
           git -C .stage/homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git -C .stage/homebrew-tap diff --quiet; then
+          git -C .stage/homebrew-tap add Formula/icey-server.rb
+          if git -C .stage/homebrew-tap diff --cached --quiet; then
             exit 0
           fi
-          git -C .stage/homebrew-tap add Formula/icey-server.rb
           git -C .stage/homebrew-tap commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
           git -C .stage/homebrew-tap push
 
@@ -209,10 +209,10 @@ jobs:
         run: |
           git -C .stage/0state-packages config user.name "github-actions[bot]"
           git -C .stage/0state-packages config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git -C .stage/0state-packages diff --quiet; then
+          git -C .stage/0state-packages add .nojekyll index.html icey
+          if git -C .stage/0state-packages diff --cached --quiet; then
             exit 0
           fi
-          git -C .stage/0state-packages add .nojekyll index.html icey
           git -C .stage/0state-packages commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
           git -C .stage/0state-packages push
 
@@ -268,10 +268,10 @@ jobs:
         run: |
           git -C .stage/aur-repo config user.name "github-actions[bot]"
           git -C .stage/aur-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git -C .stage/aur-repo diff --quiet; then
+          git -C .stage/aur-repo add PKGBUILD .SRCINFO
+          if git -C .stage/aur-repo diff --cached --quiet; then
             exit 0
           fi
-          git -C .stage/aur-repo add PKGBUILD .SRCINFO
           git -C .stage/aur-repo commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
           GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes' \
             git -C .stage/aur-repo push
