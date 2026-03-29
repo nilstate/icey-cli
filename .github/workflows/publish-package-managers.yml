@@ -101,16 +101,30 @@ jobs:
   publish-homebrew:
     runs-on: ubuntu-24.04
     needs: build-manifests
-    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     steps:
+      - name: Check Homebrew publish credentials
+        id: gate
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -n "${HOMEBREW_TAP_TOKEN:-}" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Homebrew publish: HOMEBREW_TAP_TOKEN is not configured."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.publish == 'true'
         with:
           name: package-managers-rendered
           path: .stage/package-managers/rendered
 
       - name: Checkout tap repo
+        if: steps.gate.outputs.publish == 'true'
         uses: actions/checkout@v4
         with:
           repository: nilstate/homebrew-tap
@@ -118,11 +132,13 @@ jobs:
           path: .stage/homebrew-tap
 
       - name: Publish formula
+        if: steps.gate.outputs.publish == 'true'
         env:
           TAP_REPO_DIR: ${{ github.workspace }}/.stage/homebrew-tap
         run: ./scripts/publish-homebrew.sh
 
       - name: Commit formula update
+        if: steps.gate.outputs.publish == 'true'
         run: |
           git -C .stage/homebrew-tap config user.name "github-actions[bot]"
           git -C .stage/homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -136,16 +152,30 @@ jobs:
   publish-aur:
     runs-on: ubuntu-24.04
     needs: build-manifests
-    if: ${{ secrets.AUR_SSH_PRIVATE_KEY != '' }}
     steps:
+      - name: Check AUR publish credentials
+        id: gate
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [[ -n "${AUR_SSH_PRIVATE_KEY:-}" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping AUR publish: AUR_SSH_PRIVATE_KEY is not configured."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.publish == 'true'
         with:
           name: package-managers-rendered
           path: .stage/package-managers/rendered
 
       - name: Configure SSH
+        if: steps.gate.outputs.publish == 'true'
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
@@ -155,16 +185,19 @@ jobs:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
 
       - name: Checkout AUR package
+        if: steps.gate.outputs.publish == 'true'
         run: git clone ssh://aur@aur.archlinux.org/icey-server.git .stage/aur-repo
         env:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/aur -o IdentitiesOnly=yes
 
       - name: Publish AUR package
+        if: steps.gate.outputs.publish == 'true'
         env:
           AUR_REPO_DIR: ${{ github.workspace }}/.stage/aur-repo
         run: ./scripts/publish-aur.sh
 
       - name: Commit AUR update
+        if: steps.gate.outputs.publish == 'true'
         run: |
           git -C .stage/aur-repo config user.name "github-actions[bot]"
           git -C .stage/aur-repo config user.email "41898282+github-actions[bot]@users.noreply.github.com"
