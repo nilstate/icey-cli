@@ -12,6 +12,22 @@ namespace media_server {
 
 struct Config
 {
+    struct TlsConfig
+    {
+        std::string certFile;
+        std::string keyFile;
+
+        [[nodiscard]] bool configured() const
+        {
+            return !certFile.empty() || !keyFile.empty();
+        }
+
+        [[nodiscard]] bool enabled() const
+        {
+            return !certFile.empty() && !keyFile.empty();
+        }
+    };
+
     struct VisionConfig
     {
         bool enabled = false;
@@ -38,6 +54,7 @@ struct Config
     std::string host = "0.0.0.0";
     uint16_t port = 4500;
     std::string webRoot = "./web/dist";
+    TlsConfig tls;
 
     enum class Mode { Stream, Record, Relay };
     Mode mode = Mode::Stream;
@@ -68,6 +85,18 @@ struct Config
 };
 
 
+struct ConfigLoadResult
+{
+    Config config;
+    std::string path;
+    bool exists = false;
+    bool valid = true;
+    bool usedDefaults = true;
+    std::string error;
+};
+
+
+ConfigLoadResult loadConfigResult(const std::string& path);
 Config loadConfig(const std::string& path);
 std::string makeRecordingPath(const std::string& recordDir, std::string_view peerId);
 

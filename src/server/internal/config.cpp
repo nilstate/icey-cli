@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 
 
 namespace icy {
@@ -64,85 +65,128 @@ const char* Config::modeName(Mode mode)
 }
 
 
-Config loadConfig(const std::string& path)
+ConfigLoadResult loadConfigResult(const std::string& path)
 {
+    ConfigLoadResult result;
+    result.path = path;
+
     Config c;
+    result.exists = std::filesystem::exists(path);
+
     std::ifstream file(path);
-    if (!file.is_open())
-        return c;
-
-    json::Value j;
-    file >> j;
-
-    if (j.contains("http")) {
-        auto& h = j["http"];
-        c.host = h.value("host", c.host);
-        c.port = h.value("port", c.port);
+    if (!result.exists) {
+        result.config = std::move(c);
+        return result;
     }
-    if (j.contains("media")) {
-        auto& m = j["media"];
-        c.mode = Config::parseMode(m.value("mode", "stream"));
-        c.source = m.value("source", c.source);
-        c.recordDir = m.value("recordDir", c.recordDir);
-        c.loop = m.value("loop", c.loop);
-        if (m.contains("video")) {
-            auto& v = m["video"];
-            c.videoCodec = v.value("codec", c.videoCodec);
-            c.videoWidth = v.value("width", c.videoWidth);
-            c.videoHeight = v.value("height", c.videoHeight);
-            c.videoFps = v.value("fps", c.videoFps);
-            c.videoBitRate = v.value("bitrate", c.videoBitRate);
+    if (!file.is_open()) {
+        result.valid = false;
+        result.usedDefaults = false;
+        result.error = "Cannot open config file";
+        result.config = std::move(c);
+        return result;
+    }
+
+    try {
+        json::Value j;
+        file >> j;
+
+        if (j.contains("http")) {
+            auto& h = j["http"];
+            c.host = h.value("host", c.host);
+            c.port = h.value("port", c.port);
         }
-        if (m.contains("audio")) {
-            auto& a = m["audio"];
-            c.audioCodec = a.value("codec", c.audioCodec);
-            c.audioChannels = a.value("channels", c.audioChannels);
-            c.audioSampleRate = a.value("sampleRate", c.audioSampleRate);
-            c.audioBitRate = a.value("bitrate", c.audioBitRate);
+        if (j.contains("tls")) {
+            auto& t = j["tls"];
+            c.tls.certFile = t.value("cert", c.tls.certFile);
+            c.tls.keyFile = t.value("key", c.tls.keyFile);
         }
-        if (m.contains("intelligence")) {
-            auto& intelligence = m["intelligence"];
-            if (intelligence.contains("vision")) {
-                auto& v = intelligence["vision"];
-                c.vision.enabled = v.value("enabled", c.vision.enabled);
-                c.vision.everyNthFrame = v.value("everyNthFrame", c.vision.everyNthFrame);
-                c.vision.minIntervalUsec = v.value("minIntervalUsec", c.vision.minIntervalUsec);
-                c.vision.queueDepth = v.value("queueDepth", c.vision.queueDepth);
-                if (v.contains("motion")) {
-                    auto& motion = v["motion"];
-                    c.vision.motionGridWidth = motion.value("gridWidth", c.vision.motionGridWidth);
-                    c.vision.motionGridHeight = motion.value("gridHeight", c.vision.motionGridHeight);
-                    c.vision.motionWarmupFrames = motion.value("warmupFrames", c.vision.motionWarmupFrames);
-                    c.vision.motionThreshold = motion.value("threshold", c.vision.motionThreshold);
-                    c.vision.motionCooldownUsec = motion.value("cooldownUsec", c.vision.motionCooldownUsec);
+        if (j.contains("media")) {
+            auto& m = j["media"];
+            c.mode = Config::parseMode(m.value("mode", "stream"));
+            c.source = m.value("source", c.source);
+            c.recordDir = m.value("recordDir", c.recordDir);
+            c.loop = m.value("loop", c.loop);
+            if (m.contains("video")) {
+                auto& v = m["video"];
+                c.videoCodec = v.value("codec", c.videoCodec);
+                c.videoWidth = v.value("width", c.videoWidth);
+                c.videoHeight = v.value("height", c.videoHeight);
+                c.videoFps = v.value("fps", c.videoFps);
+                c.videoBitRate = v.value("bitrate", c.videoBitRate);
+            }
+            if (m.contains("audio")) {
+                auto& a = m["audio"];
+                c.audioCodec = a.value("codec", c.audioCodec);
+                c.audioChannels = a.value("channels", c.audioChannels);
+                c.audioSampleRate = a.value("sampleRate", c.audioSampleRate);
+                c.audioBitRate = a.value("bitrate", c.audioBitRate);
+            }
+            if (m.contains("intelligence")) {
+                auto& intelligence = m["intelligence"];
+                if (intelligence.contains("vision")) {
+                    auto& v = intelligence["vision"];
+                    c.vision.enabled = v.value("enabled", c.vision.enabled);
+                    c.vision.everyNthFrame = v.value("everyNthFrame", c.vision.everyNthFrame);
+                    c.vision.minIntervalUsec = v.value("minIntervalUsec", c.vision.minIntervalUsec);
+                    c.vision.queueDepth = v.value("queueDepth", c.vision.queueDepth);
+                    if (v.contains("motion")) {
+                        auto& motion = v["motion"];
+                        c.vision.motionGridWidth = motion.value("gridWidth", c.vision.motionGridWidth);
+                        c.vision.motionGridHeight = motion.value("gridHeight", c.vision.motionGridHeight);
+                        c.vision.motionWarmupFrames = motion.value("warmupFrames", c.vision.motionWarmupFrames);
+                        c.vision.motionThreshold = motion.value("threshold", c.vision.motionThreshold);
+                        c.vision.motionCooldownUsec = motion.value("cooldownUsec", c.vision.motionCooldownUsec);
+                    }
+                }
+                if (intelligence.contains("speech")) {
+                    auto& s = intelligence["speech"];
+                    c.speech.enabled = s.value("enabled", c.speech.enabled);
+                    c.speech.queueDepth = s.value("queueDepth", c.speech.queueDepth);
+                    c.speech.startThreshold = s.value("startThreshold", c.speech.startThreshold);
+                    c.speech.stopThreshold = s.value("stopThreshold", c.speech.stopThreshold);
+                    c.speech.minSilenceUsec = s.value("minSilenceUsec", c.speech.minSilenceUsec);
+                    c.speech.updateIntervalUsec = s.value("updateIntervalUsec", c.speech.updateIntervalUsec);
                 }
             }
-            if (intelligence.contains("speech")) {
-                auto& s = intelligence["speech"];
-                c.speech.enabled = s.value("enabled", c.speech.enabled);
-                c.speech.queueDepth = s.value("queueDepth", c.speech.queueDepth);
-                c.speech.startThreshold = s.value("startThreshold", c.speech.startThreshold);
-                c.speech.stopThreshold = s.value("stopThreshold", c.speech.stopThreshold);
-                c.speech.minSilenceUsec = s.value("minSilenceUsec", c.speech.minSilenceUsec);
-                c.speech.updateIntervalUsec = s.value("updateIntervalUsec", c.speech.updateIntervalUsec);
-            }
         }
-    }
-    if (j.contains("turn")) {
-        auto& t = j["turn"];
-        c.enableTurn = t.value("enabled", c.enableTurn);
-        c.turnPort = t.value("port", c.turnPort);
-        c.turnRealm = t.value("realm", c.turnRealm);
-        c.turnExternalIP = t.value("externalIp", c.turnExternalIP);
-    }
-    if (j.contains("webRoot"))
-        c.webRoot = j["webRoot"].get<std::string>();
+        if (j.contains("turn")) {
+            auto& t = j["turn"];
+            c.enableTurn = t.value("enabled", c.enableTurn);
+            c.turnPort = t.value("port", c.turnPort);
+            c.turnRealm = t.value("realm", c.turnRealm);
+            c.turnExternalIP = t.value("externalIp", c.turnExternalIP);
+        }
+        if (j.contains("webRoot"))
+            c.webRoot = j["webRoot"].get<std::string>();
 
-    c.source = resolvePathFromConfig(path, c.source, true);
-    c.recordDir = resolvePathFromConfig(path, c.recordDir);
-    c.webRoot = resolvePathFromConfig(path, c.webRoot);
+        c.source = resolvePathFromConfig(path, c.source, true);
+        c.recordDir = resolvePathFromConfig(path, c.recordDir);
+        c.webRoot = resolvePathFromConfig(path, c.webRoot);
+        c.tls.certFile = resolvePathFromConfig(path, c.tls.certFile);
+        c.tls.keyFile = resolvePathFromConfig(path, c.tls.keyFile);
 
-    return c;
+        result.config = std::move(c);
+        result.usedDefaults = false;
+    }
+    catch (const std::exception& e) {
+        result.valid = false;
+        result.usedDefaults = false;
+        result.error = e.what();
+        result.config = std::move(c);
+    }
+
+    return result;
+}
+
+
+Config loadConfig(const std::string& path)
+{
+    auto result = loadConfigResult(path);
+    if (!result.valid) {
+        throw std::runtime_error(
+            "Invalid config file '" + path + "': " + result.error);
+    }
+    return result.config;
 }
 
 

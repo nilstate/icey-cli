@@ -23,6 +23,7 @@ public:
         uint16_t turnPort = 3478;
         std::string turnExternalIP;
         std::string host;
+        bool enableTls = false;
         std::string product = kProductName;
         std::string service = kServiceName;
         std::string version;

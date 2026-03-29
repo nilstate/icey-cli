@@ -58,6 +58,8 @@ void printUsage(const char* argv0)
         << "  -c, --config <path>           Config file (default: " << kDefaultConfigPath << ")\n"
         << "  --host <host>                 Bind host (default from config)\n"
         << "  --port <port>                 HTTP/WS port (default: 4500)\n"
+        << "  --tls-cert <path>             TLS certificate for direct HTTPS/WSS serving\n"
+        << "  --tls-key <path>              TLS private key for direct HTTPS/WSS serving\n"
         << "  --turn-port <port>            TURN port (default: 3478)\n"
         << "  --turn-external-ip <ip>       Public IP advertised by TURN\n"
         << "  --mode <mode>                 stream|record|relay\n"
@@ -119,7 +121,8 @@ int main(int argc, char** argv)
         }
     }
 
-    media_server::Config config = media_server::loadConfig(configPath);
+    auto configLoad = media_server::loadConfigResult(configPath);
+    media_server::Config config = configLoad.config;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -137,6 +140,14 @@ int main(int argc, char** argv)
         }
         else if (arg == "--port" && !val.empty()) {
             config.port = static_cast<uint16_t>(std::stoi(val));
+            ++i;
+        }
+        else if (arg == "--tls-cert" && !val.empty()) {
+            config.tls.certFile = val;
+            ++i;
+        }
+        else if (arg == "--tls-key" && !val.empty()) {
+            config.tls.keyFile = val;
             ++i;
         }
         else if (arg == "--turn-port" && !val.empty()) {
@@ -185,12 +196,18 @@ int main(int argc, char** argv)
         }
     }
 
-    media_server::MediaServerApp app(config);
+    media_server::MediaServerApp app(config, configLoad);
     if (doctorMode) {
         const auto report = app.doctorJson();
         std::cout << report.dump(2) << '\n';
         Logger::destroy();
         return report.value("ready", false) ? 0 : 1;
+    }
+    if (!configLoad.valid) {
+        std::cerr << "Error: invalid config file '" << configPath
+                  << "': " << configLoad.error << '\n';
+        Logger::destroy();
+        return 1;
     }
     if (!app.start()) {
         Logger::destroy();

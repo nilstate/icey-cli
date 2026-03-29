@@ -4,6 +4,7 @@
 #include "config.h"
 #include "icy/symple/server.h"
 #include "icy/json/json.h"
+#include "icy/net/socket.h"
 
 #include <chrono>
 #include <memory>
@@ -24,7 +25,8 @@ class RelayController;
 class MediaServerApp
 {
 public:
-    explicit MediaServerApp(const Config& config);
+    explicit MediaServerApp(const Config& config,
+                            ConfigLoadResult configLoad = {});
     ~MediaServerApp();
 
     bool start();
@@ -35,8 +37,10 @@ public:
 
 private:
     std::shared_ptr<MediaSession> ensureSession(const std::string& peerAddress);
+    net::TCPSocket::Ptr createListenSocket(std::string* detail = nullptr) const;
 
     Config _config;
+    ConfigLoadResult _configLoad;
     smpl::Server _symple;
     std::unique_ptr<EmbeddedTurn> _turn;
     std::string _serverPeerId;

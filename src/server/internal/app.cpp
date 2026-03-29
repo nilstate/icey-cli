@@ -6,11 +6,18 @@
 #include "runtimeinfo.h"
 #include "turnserver.h"
 
+#include "icy/av/ffmpeg.h"
 #include "icy/filesystem.h"
 #include "icy/logger.h"
+#include "icy/net/sslcontext.h"
+#include "icy/net/sslsocket.h"
 
+#include <openssl/crypto.h>
+
+#include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <vector>
 
 
@@ -45,6 +52,28 @@ std::string sourceKind(const std::string& source)
     return "file";
 }
 
+std::string ffmpegVersionString()
+{
+#ifdef HAVE_FFMPEG
+    std::ostringstream detail;
+    detail << "libavformat " << (avformat_version() >> 16)
+           << "." << ((avformat_version() >> 8) & 0xFF)
+           << "." << (avformat_version() & 0xFF)
+           << " (" << av_version_info() << ")";
+    return detail.str();
+#else
+    return "FFmpeg support was not compiled into this build";
+#endif
+}
+
+std::string opensslVersionString()
+{
+    const char* version = OpenSSL_version(OPENSSL_VERSION);
+    if (!version || !*version)
+        return {};
+    return version;
+}
+
 json::Value makeCheck(const char* name,
                       const char* result,
                       const std::string& detail)
@@ -59,8 +88,10 @@ json::Value makeCheck(const char* name,
 } // namespace
 
 
-MediaServerApp::MediaServerApp(const Config& config)
+MediaServerApp::MediaServerApp(const Config& config,
+                               ConfigLoadResult configLoad)
     : _config(config)
+    , _configLoad(std::move(configLoad))
     , _relay(std::make_unique<RelayController>())
 {
 }
@@ -109,6 +140,15 @@ bool MediaServerApp::start()
     symOpts.port = _config.port;
     symOpts.authentication = false;
     symOpts.dynamicRooms = true;
+    if (_config.tls.enabled()) {
+        std::string tlsDetail;
+        symOpts.socket = createListenSocket(&tlsDetail);
+        if (!symOpts.socket) {
+            std::cerr << "Error: cannot initialize direct TLS: "
+                      << tlsDetail << '\n';
+            return false;
+        }
+    }
 
     _symple.Authenticate += [](smpl::ServerPeer&,
                                const json::Value&,
@@ -139,6 +179,7 @@ bool MediaServerApp::start()
                           _config.turnPort,
                           _config.turnExternalIP,
                           _config.host,
+                          _config.tls.enabled(),
                           kProductName,
                           kServiceName,
                           ICEY_SERVER_VERSION,
@@ -198,7 +239,9 @@ bool MediaServerApp::start()
 
     std::cout << kServiceName << " listening on "
               << _config.host << ":" << _config.port << '\n';
-    std::cout << "Web UI: http://localhost:" << _config.port << "/\n";
+    std::cout << "Web UI: "
+              << (_config.tls.enabled() ? "https" : "http")
+              << "://localhost:" << _config.port << "/\n";
     if (_config.mode == Config::Mode::Stream && !_config.source.empty())
         std::cout << "Source: " << _config.source << '\n';
     if (_config.mode == Config::Mode::Record)
@@ -230,10 +273,52 @@ json::Value MediaServerApp::doctorJson() const
     j["source"]["remote"] = isRemoteStreamSource(_config.source);
     j["http"]["host"] = _config.host;
     j["http"]["port"] = _config.port;
+    j["http"]["scheme"] = _config.tls.enabled() ? "https" : "http";
+    j["http"]["tls"] = _config.tls.enabled();
     j["turn"]["enabled"] = _config.enableTurn;
     j["turn"]["port"] = _config.turnPort;
     j["turn"]["externalIp"] = _config.turnExternalIP;
+    j["tls"]["configured"] = _config.tls.configured();
+    j["tls"]["enabled"] = _config.tls.enabled();
+    j["tls"]["certFile"] = _config.tls.certFile;
     j["web"]["root"] = _config.webRoot;
+    j["config"]["path"] = _configLoad.path;
+    j["config"]["exists"] = _configLoad.exists;
+    j["config"]["valid"] = _configLoad.valid;
+
+    if (!_configLoad.valid) {
+        checks.push_back(makeCheck("config", "fail",
+            "Invalid config file " + _configLoad.path + ": " + _configLoad.error));
+        j["config"]["error"] = _configLoad.error;
+        readyToRun = false;
+    }
+    else if (_configLoad.exists) {
+        checks.push_back(makeCheck("config", "pass",
+            "Loaded config from " + _configLoad.path));
+    }
+    else {
+        checks.push_back(makeCheck("config", "pass",
+            "No config file at " + _configLoad.path + "; using built-in defaults and CLI flags"));
+    }
+
+    const auto opensslVersion = opensslVersionString();
+    if (!opensslVersion.empty()) {
+        checks.push_back(makeCheck("openssl", "pass",
+            "Linked against " + opensslVersion));
+    }
+    else {
+        checks.push_back(makeCheck("openssl", "fail",
+            "OpenSSL runtime version could not be determined"));
+        readyToRun = false;
+    }
+
+#ifdef HAVE_FFMPEG
+    checks.push_back(makeCheck("ffmpeg", "pass", ffmpegVersionString()));
+#else
+    checks.push_back(makeCheck("ffmpeg", "fail",
+        "FFmpeg support is required for source ingestion and recording"));
+    readyToRun = false;
+#endif
 
     if (fs::exists(webIndex)) {
         checks.push_back(makeCheck("web_root", "pass",
@@ -283,6 +368,38 @@ json::Value MediaServerApp::doctorJson() const
         checks.push_back(makeCheck("source", "pass",
             "No configured media source required for " +
             std::string(Config::modeName(_config.mode)) + " mode"));
+    }
+
+    if (_config.tls.configured()) {
+        if (!_config.tls.enabled()) {
+            checks.push_back(makeCheck("tls", "fail",
+                "Direct TLS requires both tls.cert and tls.key"));
+            readyToRun = false;
+        }
+        else if (!fs::exists(_config.tls.certFile)) {
+            checks.push_back(makeCheck("tls", "fail",
+                "TLS certificate not found: " + _config.tls.certFile));
+            readyToRun = false;
+        }
+        else if (!fs::exists(_config.tls.keyFile)) {
+            checks.push_back(makeCheck("tls", "fail",
+                "TLS private key not found: " + _config.tls.keyFile));
+            readyToRun = false;
+        }
+        else {
+            std::string tlsDetail;
+            if (createListenSocket(&tlsDetail)) {
+                checks.push_back(makeCheck("tls", "pass", tlsDetail));
+            }
+            else {
+                checks.push_back(makeCheck("tls", "fail", tlsDetail));
+                readyToRun = false;
+            }
+        }
+    }
+    else {
+        checks.push_back(makeCheck("tls", "pass",
+            "Direct TLS disabled; serving HTTP/WS on the primary port"));
     }
 
     if (_config.enableTurn) {
@@ -366,6 +483,8 @@ json::Value MediaServerApp::statusJson() const
     j["mode"] = Config::modeName(_config.mode);
     j["host"] = _config.host;
     j["port"] = _config.port;
+    j["http"]["scheme"] = _config.tls.enabled() ? "https" : "http";
+    j["http"]["tls"] = _config.tls.enabled();
     j["peer"]["id"] = _serverPeerId.empty() ? std::string(kServerPeerId) : _serverPeerId;
     j["peer"]["name"] = kServerPeerName;
     j["peer"]["type"] = kServerPeerType;
@@ -387,6 +506,45 @@ json::Value MediaServerApp::statusJson() const
         j["uptimeSec"] = uptime;
     }
     return j;
+}
+
+
+net::TCPSocket::Ptr MediaServerApp::createListenSocket(std::string* detail) const
+{
+    if (!_config.tls.configured()) {
+        if (detail)
+            *detail = "Direct TLS disabled";
+        return nullptr;
+    }
+    if (!_config.tls.enabled()) {
+        if (detail)
+            *detail = "Direct TLS requires both tls.cert and tls.key";
+        return nullptr;
+    }
+
+    try {
+        auto context = std::make_shared<net::SSLContext>(
+            net::SSLContext::SERVER_USE,
+            _config.tls.keyFile,
+            _config.tls.certFile,
+            "",
+            net::SSLContext::VERIFY_NONE,
+            9,
+            false);
+        context->enableSessionCache(true, "icey-server");
+        context->setALPNProtocols({"http/1.1"});
+
+        if (detail) {
+            *detail = "HTTPS/WSS enabled with certificate " + _config.tls.certFile;
+        }
+
+        return std::make_shared<net::SSLSocket>(context, _symple.loop());
+    }
+    catch (const std::exception& e) {
+        if (detail)
+            *detail = e.what();
+        return nullptr;
+    }
 }
 
 
