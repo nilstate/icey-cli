@@ -54,7 +54,7 @@ jobs:
           CXX: g++-13
           ICEY_SOURCE_DIR: ${{ github.workspace }}/icey
           BUILD_DIR: ${{ github.workspace }}/build-release
-          APT_BASE_URL: https://nilstate.github.io/0state-packages/icey
+          APT_BASE_URL: https://apt.0state.com/icey
         run: ./scripts/package-manager-check.sh
 
       - uses: actions/upload-artifact@v4
