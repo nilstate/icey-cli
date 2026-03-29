@@ -132,27 +132,27 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         uses: actions/checkout@v4
         with:
-          repository: nilstate/homebrew-tap
+          repository: nilstate/homebrew-0state
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: .stage/homebrew-tap
+          path: .stage/homebrew-0state
 
       - name: Publish formula
         if: steps.gate.outputs.publish == 'true'
         env:
-          TAP_REPO_DIR: ${{ github.workspace }}/.stage/homebrew-tap
+          TAP_REPO_DIR: ${{ github.workspace }}/.stage/homebrew-0state
         run: ./scripts/publish-homebrew.sh
 
       - name: Commit formula update
         if: steps.gate.outputs.publish == 'true'
         run: |
-          git -C .stage/homebrew-tap config user.name "github-actions[bot]"
-          git -C .stage/homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C .stage/homebrew-tap add Formula/icey-server.rb
-          if git -C .stage/homebrew-tap diff --cached --quiet; then
+          git -C .stage/homebrew-0state config user.name "github-actions[bot]"
+          git -C .stage/homebrew-0state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .stage/homebrew-0state add Formula/icey-server.rb
+          if git -C .stage/homebrew-0state diff --cached --quiet; then
             exit 0
           fi
-          git -C .stage/homebrew-tap commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
-          git -C .stage/homebrew-tap push
+          git -C .stage/homebrew-0state commit -m "icey-server ${{ needs.build-manifests.outputs.cli_version }}"
+          git -C .stage/homebrew-0state push
 
   publish-apt-repo:
     runs-on: ubuntu-24.04
