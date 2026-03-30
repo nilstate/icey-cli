@@ -16,6 +16,12 @@ const $statCodec = document.getElementById('stat-codec')
 const $statBitrate = document.getElementById('stat-bitrate')
 const $eventList = document.getElementById('event-list')
 const $eventStatus = document.getElementById('event-status')
+const $intelligenceSourceFps = document.getElementById('intelligence-source-fps')
+const $intelligenceSampledFps = document.getElementById('intelligence-sampled-fps')
+const $intelligenceVisionQueue = document.getElementById('intelligence-vision-queue')
+const $intelligenceVisionDropped = document.getElementById('intelligence-vision-dropped')
+const $intelligenceLatency = document.getElementById('intelligence-latency')
+const $intelligenceArtifacts = document.getElementById('intelligence-artifacts')
 
 const $btnMute = document.getElementById('btn-mute')
 const $btnCamera = document.getElementById('btn-camera')
@@ -370,6 +376,8 @@ function resetIntelligenceFeed (statusText) {
   if ($eventList) {
     $eventList.innerHTML = '<li class="event-empty">No events yet</li>'
   }
+
+  updateIntelligenceStats(null)
 }
 
 function handleIntelligenceMessage (message) {
@@ -418,11 +426,38 @@ function renderIntelligenceEvent (kind, event) {
 
   item.appendChild(meta)
   item.appendChild(summary)
+  const artifactLinks = buildArtifactLinks(event)
+  if (artifactLinks.length > 0) {
+    const links = document.createElement('div')
+    links.className = 'event-links'
+    for (const artifact of artifactLinks) {
+      const link = document.createElement('a')
+      link.href = artifact.url
+      link.textContent = artifact.label
+      link.target = '_blank'
+      link.rel = 'noreferrer'
+      links.appendChild(link)
+    }
+    item.appendChild(links)
+  }
   $eventList.prepend(item)
 
   while ($eventList.children.length > maxIntelligenceEvents) {
     $eventList.removeChild($eventList.lastElementChild)
   }
+}
+
+function buildArtifactLinks (event) {
+  const links = []
+  const snapshotUrl = event?.data?.snapshot?.url
+  if (typeof snapshotUrl === 'string' && snapshotUrl.length > 0) {
+    links.push({ label: 'Snapshot', url: snapshotUrl })
+  }
+  const clipUrl = event?.data?.clip?.url
+  if (typeof clipUrl === 'string' && clipUrl.length > 0) {
+    links.push({ label: 'Clip', url: clipUrl })
+  }
+  return links
 }
 
 function formatEventTime (event) {
@@ -482,6 +517,12 @@ function startStats () {
     if (!calls?.player?.pc) return
 
     try {
+      const statusResponse = await fetch('/api/status')
+      if (statusResponse.ok) {
+        const status = await statusResponse.json()
+        updateIntelligenceStats(status?.intelligence || null)
+      }
+
       const stats = await calls.player.pc.getStats()
       for (const report of stats.values()) {
         if (report.type === 'inbound-rtp' && report.kind === 'video') {
@@ -508,6 +549,43 @@ function stopStats () {
   }
   $statCodec.textContent = ''
   $statBitrate.textContent = ''
+  updateIntelligenceStats(null)
+}
+
+function updateIntelligenceStats (intelligence) {
+  const vision = intelligence?.vision || null
+  const formatRate = (value) => {
+    const rate = Number(value)
+    return Number.isFinite(rate) && rate > 0 ? rate.toFixed(1) : '-'
+  }
+  const formatCount = (value) => {
+    const count = Number(value)
+    return Number.isFinite(count) ? String(count) : '-'
+  }
+
+  if ($intelligenceSourceFps) {
+    $intelligenceSourceFps.textContent = formatRate(vision?.sourceFps)
+  }
+  if ($intelligenceSampledFps) {
+    $intelligenceSampledFps.textContent = formatRate(vision?.sampledFps)
+  }
+  if ($intelligenceVisionQueue) {
+    $intelligenceVisionQueue.textContent = formatCount(vision?.queueDepth)
+  }
+  if ($intelligenceVisionDropped) {
+    $intelligenceVisionDropped.textContent = formatCount(vision?.queueDropped)
+  }
+  if ($intelligenceLatency) {
+    const latencyUsec = Number(vision?.lastLatencyUsec)
+    $intelligenceLatency.textContent = Number.isFinite(latencyUsec) && latencyUsec > 0
+      ? `${(latencyUsec / 1000).toFixed(1)} ms`
+      : '-'
+  }
+  if ($intelligenceArtifacts) {
+    const snapshots = formatCount(vision?.snapshots)
+    const clips = formatCount(vision?.clips)
+    $intelligenceArtifacts.textContent = `${snapshots} / ${clips}`
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -125,6 +125,12 @@ bool MediaServerApp::start()
     if (_config.mode == Config::Mode::Record) {
         fs::mkdirr(_config.recordDir);
     }
+    if (_config.mode == Config::Mode::Stream && _config.vision.enabled) {
+        if (_config.vision.snapshots.enabled)
+            fs::mkdirr(_config.vision.snapshots.dir);
+        if (_config.vision.clips.enabled)
+            fs::mkdirr(_config.vision.clips.dir);
+    }
 
     _startedAt = std::chrono::steady_clock::now();
 
@@ -180,6 +186,7 @@ bool MediaServerApp::start()
                           _config.turnExternalIP,
                           _config.host,
                           _config.tls.enabled(),
+                          _config.recordDir,
                           kProductName,
                           kServiceName,
                           ICEY_SERVER_VERSION,
@@ -498,8 +505,31 @@ json::Value MediaServerApp::statusJson() const
     j["stream"]["sourceKind"] = sourceKind(_config.source);
     j["stream"]["loop"] = _config.loop;
     j["record"]["dir"] = _config.recordDir;
-    j["intelligence"]["vision"] = _config.vision.enabled;
-    j["intelligence"]["speech"] = _config.speech.enabled;
+    json::Value intelligence;
+    intelligence["vision"]["enabled"] = _config.vision.enabled;
+    intelligence["speech"]["enabled"] = _config.speech.enabled;
+    intelligence["vision"]["active"] = false;
+    intelligence["speech"]["active"] = false;
+    intelligence["vision"]["snapshotsEnabled"] = _config.vision.snapshots.enabled;
+    intelligence["vision"]["clipsEnabled"] = _config.vision.clips.enabled;
+    intelligence["vision"]["snapshotDir"] = _config.vision.snapshots.dir;
+    intelligence["vision"]["clipDir"] = _config.vision.clips.dir;
+    {
+        std::lock_guard lock(_sessionMutex);
+        for (const auto& [_, session] : _sessions) {
+            if (session && session->active()) {
+                intelligence = session->intelligenceStatus();
+                intelligence["vision"]["enabled"] = _config.vision.enabled;
+                intelligence["speech"]["enabled"] = _config.speech.enabled;
+                intelligence["vision"]["snapshotsEnabled"] = _config.vision.snapshots.enabled;
+                intelligence["vision"]["clipsEnabled"] = _config.vision.clips.enabled;
+                intelligence["vision"]["snapshotDir"] = _config.vision.snapshots.dir;
+                intelligence["vision"]["clipDir"] = _config.vision.clips.dir;
+                break;
+            }
+        }
+    }
+    j["intelligence"] = std::move(intelligence);
     if (_startedAt != std::chrono::steady_clock::time_point{}) {
         const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - _startedAt).count();

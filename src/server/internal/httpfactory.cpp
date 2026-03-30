@@ -16,9 +16,12 @@ constexpr const char* kDemoTurnCredential = "icey";
 class StaticFileResponder : public http::ServerResponder
 {
 public:
-    StaticFileResponder(http::ServerConnection& conn, const std::string& webRoot)
+    StaticFileResponder(http::ServerConnection& conn,
+                        const std::string& webRoot,
+                        const std::string& artifactRoot)
         : http::ServerResponder(conn)
         , _webRoot(webRoot)
+        , _artifactRoot(artifactRoot)
     {
     }
 
@@ -35,7 +38,14 @@ public:
             return;
         }
 
-        std::string filePath = _webRoot + path;
+        std::string basePath = _webRoot;
+        std::string localPath = path;
+        if (path.rfind("/artifacts/", 0) == 0) {
+            basePath = _artifactRoot;
+            localPath = path.substr(std::string("/artifacts").size());
+        }
+
+        std::string filePath = basePath + localPath;
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
             response.setStatus(http::StatusCode::NotFound);
@@ -75,6 +85,7 @@ private:
     }
 
     std::string _webRoot;
+    std::string _artifactRoot;
 };
 
 } // namespace
@@ -95,7 +106,8 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createResponder(
     if (uri.substr(0, 5) == "/api/")
         return createApiResponder(conn);
 
-    return std::make_unique<StaticFileResponder>(conn, _webRoot);
+    return std::make_unique<StaticFileResponder>(
+        conn, _webRoot, _runtimeConfig.artifactRoot);
 }
 
 

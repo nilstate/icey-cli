@@ -30,6 +30,21 @@ struct Config
 
     struct VisionConfig
     {
+        struct SnapshotConfig
+        {
+            bool enabled = false;
+            std::string dir;
+            int64_t minIntervalUsec = 1000000;
+        };
+
+        struct ClipConfig
+        {
+            bool enabled = false;
+            std::string dir;
+            int64_t preRollUsec = 1000000;
+            int64_t postRollUsec = 3000000;
+        };
+
         bool enabled = false;
         uint32_t everyNthFrame = 6;
         int64_t minIntervalUsec = 200000;
@@ -39,6 +54,8 @@ struct Config
         uint32_t motionWarmupFrames = 2;
         float motionThreshold = 0.08f;
         int64_t motionCooldownUsec = 500000;
+        SnapshotConfig snapshots;
+        ClipConfig clips;
     };
 
     struct SpeechConfig

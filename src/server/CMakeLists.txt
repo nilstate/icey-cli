@@ -4,6 +4,7 @@ add_executable(icey-server
   internal/httpfactory.cpp
   internal/media.cpp
   internal/turnserver.cpp
+  internal/visionartifacts.cpp
   media-server.cpp
 )
 

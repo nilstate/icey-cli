@@ -24,6 +24,7 @@ public:
         std::string turnExternalIP;
         std::string host;
         bool enableTls = false;
+        std::string artifactRoot;
         std::string product = kProductName;
         std::string service = kServiceName;
         std::string version;

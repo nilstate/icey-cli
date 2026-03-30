@@ -265,6 +265,31 @@ aside h2 {
   color: var(--text-dim);
 }
 
+#intelligence-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+#intelligence-stats div {
+  min-width: 0;
+}
+
+#intelligence-stats dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin-bottom: 0.2rem;
+}
+
+#intelligence-stats dd {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
 #event-list {
   list-style: none;
   display: flex;
@@ -316,6 +341,22 @@ aside h2 {
 .event-summary {
   font-size: 0.85rem;
   line-height: 1.35;
+}
+
+.event-links {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+}
+
+.event-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.event-links a:hover {
+  text-decoration: underline;
 }
 
 /* Footer */

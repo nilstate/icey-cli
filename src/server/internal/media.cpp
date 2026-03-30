@@ -1,6 +1,7 @@
 #include "media.h"
 
 #include "config.h"
+#include "visionartifacts.h"
 #include "icy/logger.h"
 #include "icy/queue.h"
 #include "icy/symple/address.h"
@@ -372,6 +373,8 @@ MediaSession::~MediaSession()
     stopRelay();
     stopRecording();
     stopStreaming();
+    if (_visionArtifacts)
+        _visionArtifacts->close();
     if (_visionQueue)
         _visionQueue->close();
     if (_speechQueue)
@@ -404,6 +407,76 @@ void MediaSession::onSignallingMessage(const json::Value& msg)
 bool MediaSession::active() const
 {
     return _session && _session->state() == wrtc::PeerSession::State::Active;
+}
+
+
+json::Value MediaSession::intelligenceStatus() const
+{
+    json::Value value;
+    value["ready"] = _intelligenceReady;
+
+    auto& vision = value["vision"];
+    vision["enabled"] = _config.vision.enabled;
+    vision["active"] = _intelligenceReady && _config.vision.enabled;
+
+    if (_visionSampler) {
+        const auto stats = _visionSampler->stats();
+        vision["seen"] = stats.seen;
+        vision["sampledFrames"] = stats.forwarded;
+        vision["sampledDropped"] = stats.dropped;
+    }
+    if (_visionQueue) {
+        vision["queueDepth"] = static_cast<std::uint64_t>(_visionQueue->size());
+        vision["queueDropped"] = static_cast<std::uint64_t>(_visionQueue->dropped());
+    }
+    if (_visionDetector) {
+        const auto stats = _visionDetector->stats();
+        vision["detectorSeen"] = stats.seen;
+        vision["detectorEmitted"] = stats.emitted;
+        vision["lastScore"] = stats.lastScore;
+    }
+    if (_visionArtifacts) {
+        const auto status = _visionArtifacts->status();
+        vision["sourceFrames"] = status.sourceFramesSeen;
+        vision["sourceFps"] = status.sourceFps;
+        vision["lastLatencyUsec"] = status.lastLatencyUsec;
+        vision["snapshots"] = status.snapshotsWritten;
+        vision["clips"] = status.clipsWritten;
+        vision["clipActive"] = status.clipActive;
+        vision["lastSnapshotPath"] = status.lastSnapshotPath;
+        vision["lastSnapshotUrl"] = status.lastSnapshotUrl;
+        vision["lastClipPath"] = status.lastClipPath;
+        vision["lastClipUrl"] = status.lastClipUrl;
+
+        const int64_t startedUsec = _streamStartedUsec.load();
+        const int64_t nowUsec = VisionArtifacts::steadyNowUsec();
+        if (startedUsec > 0 && nowUsec > startedUsec && _visionSampler) {
+            const auto samplerStats = _visionSampler->stats();
+            const long double elapsedUsec =
+                static_cast<long double>(nowUsec - startedUsec);
+            vision["sampledFps"] = static_cast<double>(
+                (static_cast<long double>(samplerStats.forwarded) * 1000000.0L) /
+                elapsedUsec);
+        }
+    }
+
+    auto& speech = value["speech"];
+    speech["enabled"] = _config.speech.enabled;
+    speech["active"] = _intelligenceReady && _config.speech.enabled;
+    if (_speechQueue) {
+        speech["queueDepth"] = static_cast<std::uint64_t>(_speechQueue->size());
+        speech["queueDropped"] = static_cast<std::uint64_t>(_speechQueue->dropped());
+    }
+    if (_speechDetector) {
+        const auto stats = _speechDetector->stats();
+        speech["detectorSeen"] = stats.seen;
+        speech["detectorEmitted"] = stats.emitted;
+        speech["vadActive"] = stats.active;
+        speech["lastLevel"] = stats.lastLevel;
+        speech["lastPeak"] = stats.lastPeak;
+    }
+
+    return value;
 }
 
 
@@ -506,9 +579,12 @@ void MediaSession::startStreaming()
         _visionSampler->reset();
     if (_visionDetector)
         _visionDetector->reset();
+    if (_visionArtifacts)
+        _visionArtifacts->reset();
     if (_speechDetector)
         _speechDetector->reset();
 
+    _streamStartedUsec = VisionArtifacts::steadyNowUsec();
     _stream.start();
     _capture->start();
     LInfo("Streaming to ", _peerId);
@@ -531,6 +607,18 @@ void MediaSession::setupIntelligence()
     const auto sourceLabel = intelligenceSourceLabel(_config, _peerId);
 
     if (_config.vision.enabled) {
+        _visionArtifacts = std::make_unique<VisionArtifacts>(
+            sourceLabel,
+            VisionArtifactConfig{
+                .snapshotsEnabled = _config.vision.snapshots.enabled,
+                .snapshotsDir = _config.vision.snapshots.dir,
+                .snapshotMinIntervalUsec = _config.vision.snapshots.minIntervalUsec,
+                .clipsEnabled = _config.vision.clips.enabled,
+                .clipsDir = _config.vision.clips.dir,
+                .clipPreRollUsec = _config.vision.clips.preRollUsec,
+                .clipPostRollUsec = _config.vision.clips.postRollUsec,
+                .videoFps = _config.videoFps,
+            });
         _visionSampler = std::make_shared<vision::FrameSampler>(vision::FrameSamplerConfig{
             .everyNthFrame = _config.vision.everyNthFrame,
             .minIntervalUsec = _config.vision.minIntervalUsec,
@@ -546,6 +634,11 @@ void MediaSession::setupIntelligence()
             .minEventIntervalUsec = _config.vision.motionCooldownUsec,
         });
 
+        _capture->emitter += [this](IPacket& packet) {
+            auto* frame = dynamic_cast<av::PlanarVideoPacket*>(&packet);
+            if (frame && _visionArtifacts)
+                _visionArtifacts->onFrame(*frame);
+        };
         _capture->emitter += [this](IPacket& packet) {
             if (_visionSampler)
                 _visionSampler->process(packet);
@@ -599,7 +692,22 @@ void MediaSession::setupIntelligence()
 
 void MediaSession::publishVisionEvent(const vision::VisionEvent& event)
 {
-    publishIntelligenceMessage(kVisionSubtype, vision::toJson(event));
+    auto enriched = event;
+    if (_visionArtifacts) {
+        const auto artifacts = _visionArtifacts->onEvent(event);
+        if (artifacts.latencyUsec > 0)
+            enriched.data["latencyUsec"] = artifacts.latencyUsec;
+        if (!artifacts.snapshotPath.empty()) {
+            enriched.data["snapshot"]["path"] = artifacts.snapshotPath;
+            enriched.data["snapshot"]["url"] = artifacts.snapshotUrl;
+        }
+        if (!artifacts.clipPath.empty()) {
+            enriched.data["clip"]["path"] = artifacts.clipPath;
+            enriched.data["clip"]["url"] = artifacts.clipUrl;
+        }
+    }
+
+    publishIntelligenceMessage(kVisionSubtype, vision::toJson(enriched));
 }
 
 

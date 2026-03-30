@@ -80,6 +80,19 @@ function smokeUsesDockerServer() {
     Boolean(process.env.MEDIA_SERVER_DOCKER_COMPOSE_FILE)
 }
 
+function streamExtraArgs() {
+  const raw = process.env.MEDIA_SERVER_STREAM_EXTRA_ARGS || ''
+  return raw.trim().length > 0 ? raw.trim().split(/\s+/) : []
+}
+
+function expectIntelligence() {
+  return process.env.MEDIA_SERVER_EXPECT_INTELLIGENCE === '1'
+}
+
+function expectedArtifactDir() {
+  return process.env.MEDIA_SERVER_ARTIFACT_DIR || ''
+}
+
 function dockerComposeFile() {
   return process.env.MEDIA_SERVER_DOCKER_COMPOSE_FILE ||
     candidatePath('docker/compose.yaml')
@@ -540,6 +553,31 @@ async function waitForInboundVideo(page) {
   }
 }
 
+async function waitForIntelligenceEvent(page) {
+  await page.waitForFunction(() => {
+    const eventList = document.getElementById('event-list')
+    if (!eventList)
+      return false
+    return Boolean(eventList.querySelector('.event-item'))
+  }, null, { timeout: 20000 })
+}
+
+async function waitForArtifactOutputs(rootDir) {
+  const deadline = Date.now() + 20000
+  const snapshotsDir = path.join(rootDir, 'snapshots')
+  const clipsDir = path.join(rootDir, 'clips')
+  while (Date.now() < deadline) {
+    const snapshotNames = await readdir(snapshotsDir).catch(() => [])
+    const clipNames = await readdir(clipsDir).catch(() => [])
+    const hasSnapshot = snapshotNames.some((name) => name.endsWith('.jpg') || name.endsWith('.png'))
+    const hasClip = clipNames.some((name) => name.endsWith('.mp4'))
+    if (hasSnapshot && hasClip)
+      return
+    await delay(500)
+  }
+  fail(`Expected snapshot and clip outputs under ${rootDir}`)
+}
+
 async function waitForRecording(recordDir) {
   const deadline = Date.now() + 20000
   while (Date.now() < deadline) {
@@ -562,13 +600,21 @@ async function runStreamScenario(browser, webRoot, sourceFile) {
     '--port', '4600',
     '--mode', 'stream',
     '--web-root', webRoot,
-    '--source', sourceFile
+    '--source', sourceFile,
+    ...streamExtraArgs()
   ], async ({port}) => {
     const {context, page} = await newPage(browser, `http://127.0.0.1:${port}/`, 'stream')
     try {
       await callPeer(page, 'icey', 'Watch')
       await waitForActive(page)
       await waitForInboundVideo(page)
+      if (expectIntelligence()) {
+        await waitForIntelligenceEvent(page)
+        const artifactDir = expectedArtifactDir()
+        if (artifactDir) {
+          await waitForArtifactOutputs(artifactDir)
+        }
+      }
     } finally {
       await context.close()
     }

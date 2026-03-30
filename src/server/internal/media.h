@@ -7,6 +7,7 @@
 #include "icy/av/multiplexpacketencoder.h"
 #include "icy/av/videodecoder.h"
 #include "icy/av/videopacketencoder.h"
+#include "icy/json/json.h"
 #include "icy/packetstream.h"
 #include "icy/speech/speechqueue.h"
 #include "icy/speech/voiceactivitydetector.h"
@@ -17,6 +18,7 @@
 #include "icy/webrtc/peersession.h"
 #include "icy/webrtc/support/sympleserversignaller.h"
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -32,6 +34,7 @@ namespace media_server {
 class MediaSession;
 class IntelligencePublisher;
 class VideoRecorder;
+class VisionArtifacts;
 struct VideoRecorderDeleter
 {
     void operator()(VideoRecorder* recorder) const;
@@ -78,6 +81,7 @@ public:
     const std::string& peerId() const;
     void onSignallingMessage(const json::Value& msg);
     bool active() const;
+    json::Value intelligenceStatus() const;
     void relayVideo(av::VideoPacket& packet);
     void relayAudio(av::AudioPacket& packet);
     void requestRelayKeyframe();
@@ -113,12 +117,14 @@ private:
     std::unique_ptr<vision::MotionDetector> _visionDetector;
     std::shared_ptr<speech::SpeechQueue> _speechQueue;
     std::unique_ptr<speech::VoiceActivityDetector> _speechDetector;
+    std::unique_ptr<VisionArtifacts> _visionArtifacts;
     std::unique_ptr<IntelligencePublisher> _publisher;
     wrtc::WebRtcTrackSender* _videoSender = nullptr;
     wrtc::WebRtcTrackSender* _audioSender = nullptr;
     bool _streamReady = false;
     bool _intelligenceReady = false;
     bool _relayAttached = false;
+    std::atomic<int64_t> _streamStartedUsec{0};
     std::unique_ptr<VideoRecorder, VideoRecorderDeleter> _recorder;
     std::unique_ptr<wrtc::SympleServerSignaller> _signaller;
     std::unique_ptr<wrtc::PeerSession> _session;

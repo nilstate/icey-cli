@@ -37,6 +37,17 @@
         "everyNthFrame": 6,
         "minIntervalUsec": 200000,
         "queueDepth": 8,
+        "snapshots": {
+          "enabled": false,
+          "dir": "./recordings/snapshots",
+          "minIntervalUsec": 1000000
+        },
+        "clips": {
+          "enabled": false,
+          "dir": "./recordings/clips",
+          "preRollUsec": 1000000,
+          "postRollUsec": 3000000
+        },
         "motion": {
           "gridWidth": 32,
           "gridHeight": 18,

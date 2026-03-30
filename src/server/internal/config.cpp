@@ -137,6 +137,29 @@ ConfigLoadResult loadConfigResult(const std::string& path)
                         c.vision.motionThreshold = motion.value("threshold", c.vision.motionThreshold);
                         c.vision.motionCooldownUsec = motion.value("cooldownUsec", c.vision.motionCooldownUsec);
                     }
+                    if (v.contains("snapshots")) {
+                        auto& snapshots = v["snapshots"];
+                        c.vision.snapshots.enabled =
+                            snapshots.value("enabled", c.vision.snapshots.enabled);
+                        c.vision.snapshots.dir =
+                            snapshots.value("dir", c.vision.snapshots.dir);
+                        c.vision.snapshots.minIntervalUsec = snapshots.value(
+                            "minIntervalUsec",
+                            c.vision.snapshots.minIntervalUsec);
+                    }
+                    if (v.contains("clips")) {
+                        auto& clips = v["clips"];
+                        c.vision.clips.enabled =
+                            clips.value("enabled", c.vision.clips.enabled);
+                        c.vision.clips.dir =
+                            clips.value("dir", c.vision.clips.dir);
+                        c.vision.clips.preRollUsec = clips.value(
+                            "preRollUsec",
+                            c.vision.clips.preRollUsec);
+                        c.vision.clips.postRollUsec = clips.value(
+                            "postRollUsec",
+                            c.vision.clips.postRollUsec);
+                    }
                 }
                 if (intelligence.contains("speech")) {
                     auto& s = intelligence["speech"];
@@ -161,6 +184,12 @@ ConfigLoadResult loadConfigResult(const std::string& path)
 
         c.source = resolvePathFromConfig(path, c.source, true);
         c.recordDir = resolvePathFromConfig(path, c.recordDir);
+        if (c.vision.snapshots.dir.empty())
+            c.vision.snapshots.dir = fs::makePath(c.recordDir, "snapshots");
+        if (c.vision.clips.dir.empty())
+            c.vision.clips.dir = fs::makePath(c.recordDir, "clips");
+        c.vision.snapshots.dir = resolvePathFromConfig(path, c.vision.snapshots.dir);
+        c.vision.clips.dir = resolvePathFromConfig(path, c.vision.clips.dir);
         c.webRoot = resolvePathFromConfig(path, c.webRoot);
         c.tls.certFile = resolvePathFromConfig(path, c.tls.certFile);
         c.tls.keyFile = resolvePathFromConfig(path, c.tls.keyFile);
