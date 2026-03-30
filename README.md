@@ -92,6 +92,12 @@ Use:
 make package-managers
 ```
 
+If the AUR SSH edge is not reachable from GitHub Actions, the local fallback is:
+
+```bash
+make publish-aur AUR_REPO_DIR=/path/to/aur-icey-server
+```
+
 That generates and validates:
 
 - `icey-cli-<version>-source.tar.gz`

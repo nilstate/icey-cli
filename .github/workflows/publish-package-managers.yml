@@ -224,8 +224,12 @@ jobs:
         id: gate
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_PUBLISH_ENABLED: ${{ vars.AUR_PUBLISH_ENABLED }}
         run: |
-          if [[ -n "${AUR_SSH_PRIVATE_KEY:-}" ]]; then
+          if [[ "${AUR_PUBLISH_ENABLED:-false}" != "true" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping AUR publish: AUR_PUBLISH_ENABLED is not enabled. Use make publish-aur AUR_REPO_DIR=/path/to/aur-icey-server for the local fallback."
+          elif [[ -n "${AUR_SSH_PRIVATE_KEY:-}" ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -245,9 +249,9 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" | tr -d '\r' > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
 
