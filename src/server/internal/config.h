@@ -30,6 +30,13 @@ struct Config
 
     struct VisionConfig
     {
+        struct NormalizerConfig
+        {
+            int width = 0;
+            int height = 0;
+            std::string pixelFmt;
+        };
+
         struct SnapshotConfig
         {
             bool enabled = false;
@@ -49,6 +56,7 @@ struct Config
         uint32_t everyNthFrame = 6;
         int64_t minIntervalUsec = 200000;
         int queueDepth = 8;
+        NormalizerConfig normalize;
         uint32_t motionGridWidth = 32;
         uint32_t motionGridHeight = 18;
         uint32_t motionWarmupFrames = 2;

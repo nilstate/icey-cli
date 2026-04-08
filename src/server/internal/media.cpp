@@ -31,6 +31,12 @@ std::string intelligenceSourceLabel(const Config& config, const std::string& pee
     return config.source.empty() ? peerId : config.source;
 }
 
+
+std::string intelligenceStreamId(const std::string& peerId)
+{
+    return "stream/" + peerId;
+}
+
 } // namespace
 
 
@@ -425,6 +431,12 @@ json::Value MediaSession::intelligenceStatus() const
         vision["sampledFrames"] = stats.forwarded;
         vision["sampledDropped"] = stats.dropped;
     }
+    if (_visionNormalizer) {
+        const auto stats = _visionNormalizer->stats();
+        vision["normalizedFrames"] = stats.emitted;
+        vision["normalizerDropped"] = stats.dropped;
+        vision["normalizerConverted"] = stats.converted;
+    }
     if (_visionQueue) {
         vision["queueDepth"] = static_cast<std::uint64_t>(_visionQueue->size());
         vision["queueDropped"] = static_cast<std::uint64_t>(_visionQueue->dropped());
@@ -577,6 +589,8 @@ void MediaSession::startStreaming()
 
     if (_visionSampler)
         _visionSampler->reset();
+    if (_visionNormalizer)
+        _visionNormalizer->reset();
     if (_visionDetector)
         _visionDetector->reset();
     if (_visionArtifacts)
@@ -605,6 +619,7 @@ void MediaSession::setupIntelligence()
         return;
 
     const auto sourceLabel = intelligenceSourceLabel(_config, _peerId);
+    const auto streamId = intelligenceStreamId(_peerId);
 
     if (_config.vision.enabled) {
         _visionArtifacts = std::make_unique<VisionArtifacts>(
@@ -623,9 +638,18 @@ void MediaSession::setupIntelligence()
             .everyNthFrame = _config.vision.everyNthFrame,
             .minIntervalUsec = _config.vision.minIntervalUsec,
         });
+        _visionNormalizer = std::make_shared<vision::FrameNormalizer>(
+            vision::FrameNormalizerConfig{
+                .sourceId = sourceLabel,
+                .streamId = streamId,
+                .width = _config.vision.normalize.width,
+                .height = _config.vision.normalize.height,
+                .pixelFmt = _config.vision.normalize.pixelFmt,
+            });
         _visionQueue = std::make_shared<vision::DetectionQueue>(_config.vision.queueDepth);
         _visionDetector = std::make_unique<vision::MotionDetector>(vision::MotionDetectorConfig{
             .source = sourceLabel,
+            .streamId = streamId,
             .detectorName = "motion",
             .gridWidth = _config.vision.motionGridWidth,
             .gridHeight = _config.vision.motionGridHeight,
@@ -644,12 +668,16 @@ void MediaSession::setupIntelligence()
                 _visionSampler->process(packet);
         };
         _visionSampler->emitter += [this](IPacket& packet) {
-            auto* frame = dynamic_cast<av::PlanarVideoPacket*>(&packet);
+            if (_visionNormalizer)
+                _visionNormalizer->process(packet);
+        };
+        _visionNormalizer->emitter += [this](IPacket& packet) {
+            auto* frame = dynamic_cast<vision::VisionFramePacket*>(&packet);
             if (frame && _visionQueue)
                 _visionQueue->process(*frame);
         };
         _visionQueue->emitter += [this](IPacket& packet) {
-            auto* frame = dynamic_cast<av::PlanarVideoPacket*>(&packet);
+            auto* frame = dynamic_cast<vision::VisionFramePacket*>(&packet);
             if (frame && _visionDetector)
                 _visionDetector->process(*frame);
         };

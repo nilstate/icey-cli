@@ -461,7 +461,15 @@ function buildArtifactLinks (event) {
 }
 
 function formatEventTime (event) {
-  const usec = Number(event?.time || event?.audio?.time || event?.frame?.time || 0)
+  const usec = Number(
+    event?.frame?.ptsUsec ??
+    event?.audio?.timeUsec ??
+    event?.time ??
+    event?.audio?.time ??
+    event?.frame?.time ??
+    event?.emittedAtUsec ??
+    0
+  )
   if (!Number.isFinite(usec) || usec <= 0) {
     return 'live'
   }

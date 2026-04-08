@@ -13,6 +13,7 @@
 #include "icy/speech/voiceactivitydetector.h"
 #include "icy/symple/server.h"
 #include "icy/vision/detectionqueue.h"
+#include "icy/vision/framenormalizer.h"
 #include "icy/vision/framesampler.h"
 #include "icy/vision/motiondetector.h"
 #include "icy/webrtc/peersession.h"
@@ -113,6 +114,7 @@ private:
     std::shared_ptr<av::VideoPacketEncoder> _videoEncoder;
     std::shared_ptr<av::AudioPacketEncoder> _audioEncoder;
     std::shared_ptr<vision::FrameSampler> _visionSampler;
+    std::shared_ptr<vision::FrameNormalizer> _visionNormalizer;
     std::shared_ptr<vision::DetectionQueue> _visionQueue;
     std::unique_ptr<vision::MotionDetector> _visionDetector;
     std::shared_ptr<speech::SpeechQueue> _speechQueue;
