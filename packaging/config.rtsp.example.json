@@ -37,6 +37,11 @@
         "everyNthFrame": 6,
         "minIntervalUsec": 200000,
         "queueDepth": 8,
+        "normalize": {
+          "width": 0,
+          "height": 0,
+          "pixelFmt": ""
+        },
         "snapshots": {
           "enabled": true,
           "dir": "./recordings/snapshots",

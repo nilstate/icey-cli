@@ -129,6 +129,15 @@ ConfigLoadResult loadConfigResult(const std::string& path)
                     c.vision.everyNthFrame = v.value("everyNthFrame", c.vision.everyNthFrame);
                     c.vision.minIntervalUsec = v.value("minIntervalUsec", c.vision.minIntervalUsec);
                     c.vision.queueDepth = v.value("queueDepth", c.vision.queueDepth);
+                    if (v.contains("normalize")) {
+                        auto& normalize = v["normalize"];
+                        c.vision.normalize.width =
+                            normalize.value("width", c.vision.normalize.width);
+                        c.vision.normalize.height =
+                            normalize.value("height", c.vision.normalize.height);
+                        c.vision.normalize.pixelFmt =
+                            normalize.value("pixelFmt", c.vision.normalize.pixelFmt);
+                    }
                     if (v.contains("motion")) {
                         auto& motion = v["motion"];
                         c.vision.motionGridWidth = motion.value("gridWidth", c.vision.motionGridWidth);

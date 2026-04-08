@@ -23,6 +23,14 @@ double fpsFromWindow(uint64_t frames, int64_t firstUsec, int64_t lastUsec)
         (static_cast<long double>(frames - 1) * 1000000.0L) / durationUsec);
 }
 
+
+int64_t eventFrameTimeUsec(const vision::VisionEvent& event)
+{
+    if (event.frame.ptsUsec > 0)
+        return event.frame.ptsUsec;
+    return event.emittedAtUsec;
+}
+
 } // namespace
 
 
@@ -152,22 +160,23 @@ void VisionArtifacts::onFrame(const av::PlanarVideoPacket& packet)
 VisionArtifactResult VisionArtifacts::onEvent(const vision::VisionEvent& event)
 {
     std::lock_guard lock(_mutex);
+    const int64_t frameTimeUsec = eventFrameTimeUsec(event);
 
     VisionArtifactResult result;
-    result.latencyUsec = latencyForFrameLocked(event.frame.timeUsec);
+    result.latencyUsec = latencyForFrameLocked(frameTimeUsec);
     _lastLatencyUsec = result.latencyUsec;
 
     if (_config.snapshotsEnabled) {
-        const int64_t sinceLastSnapshot = event.frame.timeUsec - _lastSnapshotTimeUsec;
+        const int64_t sinceLastSnapshot = frameTimeUsec - _lastSnapshotTimeUsec;
         if (_lastSnapshotTimeUsec == 0 ||
             sinceLastSnapshot >= _config.snapshotMinIntervalUsec) {
-            if (auto* frame = bestFrameLocked(event.frame.timeUsec)) {
-                const auto path = makeSnapshotPathLocked(event.frame.timeUsec);
+            if (auto* frame = bestFrameLocked(frameTimeUsec)) {
+                const auto path = makeSnapshotPathLocked(frameTimeUsec);
                 if (writeSnapshotLocked(*frame, path)) {
                     result.snapshotPath = path;
                     result.snapshotUrl = artifactUrlFor(
                         fs::makePath("snapshots", fs::filename(path)));
-                    _lastSnapshotTimeUsec = event.frame.timeUsec;
+                    _lastSnapshotTimeUsec = frameTimeUsec;
                     _lastSnapshotPath = result.snapshotPath;
                     _lastSnapshotUrl = result.snapshotUrl;
                     ++_snapshotsWritten;
@@ -180,14 +189,14 @@ VisionArtifactResult VisionArtifacts::onEvent(const vision::VisionEvent& event)
     }
 
     if (_config.clipsEnabled) {
-        if (_clip && event.frame.timeUsec <= _clip->deadlineUsec) {
+        if (_clip && frameTimeUsec <= _clip->deadlineUsec) {
             _clip->deadlineUsec = std::max(
                 _clip->deadlineUsec,
-                event.frame.timeUsec + _config.clipPostRollUsec);
+                frameTimeUsec + _config.clipPostRollUsec);
         } else {
             finishClipLocked();
-            startClipLocked(event.frame.timeUsec);
-            flushBufferedFramesLocked(event.frame.timeUsec - _config.clipPreRollUsec);
+            startClipLocked(frameTimeUsec);
+            flushBufferedFramesLocked(frameTimeUsec - _config.clipPreRollUsec);
         }
 
         if (_clip) {
