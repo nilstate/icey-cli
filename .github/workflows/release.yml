@@ -22,7 +22,7 @@ jobs:
       icey_version: ${{ steps.context.outputs.icey_version }}
       publish_package_managers: ${{ steps.context.outputs.publish_package_managers }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -40,7 +40,7 @@ jobs:
           fi
 
       - name: Checkout icey
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: nilstate/icey
           ref: ${{ steps.context.outputs.icey_version }}
@@ -66,7 +66,7 @@ jobs:
             unzip zip
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -181,7 +181,7 @@ jobs:
             echo "Skipping Homebrew publish: HOMEBREW_TAP_TOKEN is not configured."
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
@@ -192,7 +192,7 @@ jobs:
 
       - name: Checkout tap repo
         if: steps.gate.outputs.publish == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: nilstate/homebrew-icey
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -233,7 +233,7 @@ jobs:
             echo "Skipping APT publish: PACKAGES_REPO_TOKEN is not configured."
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
@@ -250,7 +250,7 @@ jobs:
 
       - name: Checkout package repo
         if: steps.gate.outputs.publish == 'true'
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: nilstate/0state-packages
           token: ${{ secrets.PACKAGES_REPO_TOKEN }}
@@ -300,7 +300,7 @@ jobs:
             echo "Skipping AUR publish: AUR_SSH_PRIVATE_KEY is not configured."
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
