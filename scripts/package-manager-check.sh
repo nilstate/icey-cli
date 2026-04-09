@@ -2,30 +2,19 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
+eval "$(bash "$ROOT_DIR/scripts/release-context.sh")"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-release}"
-CLI_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
-ICEY_VERSION="$(tr -d '[:space:]' < "$ICEY_SOURCE_DIR/VERSION")"
-LINUX_BASENAME="icey-server-${CLI_VERSION}-Linux-x86_64"
-LINUX_TARBALL="$ROOT_DIR/${LINUX_BASENAME}.tar.gz"
-LINUX_ZIP="$ROOT_DIR/${LINUX_BASENAME}.zip"
-LATEST_LINUX_TARBALL="$ROOT_DIR/icey-server-Linux-x86_64.tar.gz"
-LATEST_LINUX_ZIP="$ROOT_DIR/icey-server-Linux-x86_64.zip"
-CLI_SOURCE_ARCHIVE="$ROOT_DIR/icey-cli-${CLI_VERSION}-source.tar.gz"
-ICEY_SOURCE_ARCHIVE="$ROOT_DIR/icey-${ICEY_VERSION}-source.tar.gz"
-DEB_PATH="$ROOT_DIR/icey-server_${CLI_VERSION}_amd64.deb"
-APT_REPO_ARCHIVE="$ROOT_DIR/icey-server-apt-repo-${CLI_VERSION}.tar.gz"
 RENDERED_DIR="$ROOT_DIR/.stage/package-managers/rendered"
 APT_PUBLIC_DIR="$ROOT_DIR/.stage/apt-public"
 
-ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/build-source-archives.sh"
-ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/package-release.sh"
-ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/build-deb.sh"
-ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/build-apt-repo.sh"
+ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" bash "$ROOT_DIR/scripts/build-source-archives.sh"
+ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" bash "$ROOT_DIR/scripts/package-release.sh"
+ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" bash "$ROOT_DIR/scripts/build-deb.sh"
+ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" bash "$ROOT_DIR/scripts/build-apt-repo.sh"
 
 OUT_DIR="$RENDERED_DIR" \
 ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" \
-  "$ROOT_DIR/scripts/render-package-managers.sh"
+  bash "$ROOT_DIR/scripts/render-package-managers.sh"
 
 tar -tzf "$LINUX_TARBALL" >/dev/null
 unzip -Z1 "$LINUX_ZIP" >/dev/null
@@ -38,11 +27,19 @@ test -f "$RENDERED_DIR/homebrew/icey-server.rb"
 test -f "$RENDERED_DIR/aur/PKGBUILD"
 test -f "$RENDERED_DIR/apt/icey-server.list"
 test -f "$RENDERED_DIR/nix/default.nix"
-test -f "$RENDERED_DIR/scoop/icey-server.json"
-test -f "$RENDERED_DIR/chocolatey/icey-server.nuspec"
-test -f "$RENDERED_DIR/winget/0state.IceyServer.installer.yaml"
 test -f "$RENDERED_DIR/SHA256SUMS.txt"
 test -f "$ROOT_DIR/flake.nix"
+
+if [[ -f "$WINDOWS_ZIP" ]]; then
+  test -f "$RENDERED_DIR/scoop/icey-server.json"
+  test -f "$RENDERED_DIR/chocolatey/icey-server.nuspec"
+  test -f "$RENDERED_DIR/winget/0state.IceyServer.installer.yaml"
+fi
+
+if rg -n "REPLACE_WITH_" "$RENDERED_DIR" >/dev/null; then
+  echo "Rendered package manager outputs still contain placeholder values" >&2
+  exit 1
+fi
 
 if [[ -n "${APT_GPG_KEY_ID:-}" ]]; then
   test -f "$ROOT_DIR/.stage/apt-repo/dists/stable/InRelease"

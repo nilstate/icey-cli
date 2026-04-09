@@ -20,6 +20,8 @@ The package model is split intentionally:
 - `winget`, `Scoop`, and `Chocolatey` consume the planned Windows portable zip
   artifact.
 
+The pinned `icey` dependency release lives in [`ICEY_VERSION`](/home/kam/dev/icey-cli/ICEY_VERSION). CI and release workflows now check out that exact `icey` tag instead of floating on `nilstate/icey` `main`.
+
 ## Tracked Files
 
 - Templates live under `packaging/templates/`.
@@ -43,7 +45,7 @@ make package-managers
 ```
 
 That validates the Linux release artifacts, Debian package, APT repo archive,
-and rendered manifests for every supported package manager.
+and rendered manifests for every package manager that has a real artifact.
 
 ## Release Convention
 
@@ -57,5 +59,5 @@ The manifests assume release assets named like:
 - `icey-server-apt-repo-<version>.tar.gz`
 - `icey-server-<version>-Windows-x86_64.zip`
 
-Until the Windows release artifact exists, the Windows-facing manifests are
-rendered with the final URL shape and a checksum placeholder.
+Windows-facing manifests are rendered only when a real Windows release artifact
+and checksum exist. Placeholder package-manager outputs are no longer emitted.

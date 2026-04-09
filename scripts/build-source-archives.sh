@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
-CLI_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
-ICEY_VERSION="$(tr -d '[:space:]' < "$ICEY_SOURCE_DIR/VERSION")"
-CLI_ARCHIVE="${CLI_ARCHIVE:-$ROOT_DIR/icey-cli-${CLI_VERSION}-source.tar.gz}"
-ICEY_ARCHIVE="${ICEY_ARCHIVE:-$ROOT_DIR/icey-${ICEY_VERSION}-source.tar.gz}"
+eval "$(bash "$ROOT_DIR/scripts/release-context.sh")"
+CLI_ARCHIVE="${CLI_ARCHIVE:-$CLI_SOURCE_ARCHIVE}"
+ICEY_ARCHIVE="${ICEY_ARCHIVE:-$ICEY_SOURCE_ARCHIVE}"
+CLI_ARCHIVE_REF="${CLI_ARCHIVE_REF:-HEAD}"
+ICEY_ARCHIVE_REF="${ICEY_ARCHIVE_REF:-HEAD}"
 
 if [[ ! -d "$ROOT_DIR/.git" ]]; then
   echo "icey-cli source tree is not a git repository: $ROOT_DIR" >&2
@@ -20,15 +20,15 @@ fi
 
 git -C "$ROOT_DIR" archive \
   --format=tar.gz \
-  --prefix="icey-cli-${CLI_VERSION}/" \
+  --prefix="${CLI_SOURCE_DIRNAME}/" \
   -o "$CLI_ARCHIVE" \
-  HEAD
+  "$CLI_ARCHIVE_REF"
 
 git -C "$ICEY_SOURCE_DIR" archive \
   --format=tar.gz \
-  --prefix="icey-${ICEY_VERSION}/" \
+  --prefix="${ICEY_SOURCE_DIRNAME}/" \
   -o "$ICEY_ARCHIVE" \
-  HEAD
+  "$ICEY_ARCHIVE_REF"
 
 echo "Created source archive: $CLI_ARCHIVE"
 echo "Created source archive: $ICEY_ARCHIVE"

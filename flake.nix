@@ -1,14 +1,18 @@
 {
   description = "icey-server packaged as a Nix flake";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    icey = {
-      url = "github:nilstate/icey";
-      flake = false;
+  inputs =
+    let
+      trim = s: builtins.replaceStrings ["\n" "\r"] ["" ""] s;
+      iceyVersion = trim (builtins.readFile ./ICEY_VERSION);
+    in {
+      nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+      flake-utils.url = "github:numtide/flake-utils";
+      icey = {
+        url = "github:nilstate/icey/${iceyVersion}";
+        flake = false;
+      };
     };
-  };
 
   outputs = { self, nixpkgs, flake-utils, icey }:
     flake-utils.lib.eachDefaultSystem (system:

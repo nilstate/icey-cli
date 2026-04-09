@@ -12,10 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read release context
+        id: context
+        run: echo "icey_version=$(tr -d '[:space:]' < ICEY_VERSION)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout icey
         uses: actions/checkout@v4
         with:
           repository: nilstate/icey
+          ref: ${{ steps.context.outputs.icey_version }}
           path: icey
 
       - name: Install dependencies
@@ -70,4 +75,4 @@ jobs:
         env:
           ICEY_SOURCE_DIR: ${{ github.workspace }}/icey
           BUILD_DIR: ${{ github.workspace }}/build
-        run: ./scripts/package-manager-check.sh
+        run: bash ./scripts/package-manager-check.sh

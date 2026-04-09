@@ -65,6 +65,7 @@ make package
 make package-deb
 make package-apt
 make package-managers
+make release-metadata-check
 make release-check
 ```
 
@@ -86,6 +87,8 @@ surface:
 
 The tracked templates live under [packaging/](/home/kam/dev/icey-cli/packaging/README.md), and the local rendered outputs are generated into `.stage/package-managers/rendered/`.
 
+The exact `icey` dependency release is pinned in [ICEY_VERSION](/home/kam/dev/icey-cli/ICEY_VERSION). Release and CI jobs now build against that exact tag instead of a floating checkout.
+
 Use:
 
 ```bash
@@ -106,7 +109,8 @@ That generates and validates:
 - `icey-server-<version>-Linux-x86_64.zip`
 - `icey-server_<version>_amd64.deb`
 - `icey-server-apt-repo-<version>.tar.gz`
-- rendered manifests for Homebrew, AUR, Debian/APT, Nix, winget, Scoop, and Chocolatey
+- rendered manifests for Homebrew, AUR, Debian/APT, and Nix
+- Windows-facing manifests only when a real Windows release archive exists
 
 ## Canonical RTSP Path
 

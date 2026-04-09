@@ -1,6 +1,6 @@
 .PHONY: configure build install package package-deb package-apt package-managers \
 	publish-homebrew publish-aur publish-apt-repo publish-apt-site web-install web-build \
-	smoke-stream release-check docker-build
+	smoke-stream release-check release-metadata-check docker-build
 
 ICEY_SOURCE_DIR ?= ../icey
 BUILD_DIR ?= build-dev
@@ -21,23 +21,23 @@ install:
 	cmake --install $(BUILD_DIR) --prefix $(STAGE_DIR) --component apps
 
 package:
-	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) ./scripts/package-release.sh
+	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) bash ./scripts/package-release.sh
 
 package-deb:
-	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) ./scripts/build-deb.sh
+	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) bash ./scripts/build-deb.sh
 
 package-apt:
-	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) ./scripts/build-apt-repo.sh
+	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) bash ./scripts/build-apt-repo.sh
 
 package-managers:
-	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) ./scripts/package-manager-check.sh
+	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) bash ./scripts/package-manager-check.sh
 
 publish-homebrew:
-	./scripts/publish-homebrew.sh
+	bash ./scripts/publish-homebrew.sh
 
 publish-aur:
 	@if [ -z "$(AUR_REPO_DIR)" ]; then echo "usage: make publish-aur AUR_REPO_DIR=/path/to/aur-icey-server" >&2; exit 1; fi
-	AUR_REPO_DIR="$(AUR_REPO_DIR)" ./scripts/publish-aur.sh
+	AUR_REPO_DIR="$(AUR_REPO_DIR)" bash ./scripts/publish-aur.sh
 	git -C "$(AUR_REPO_DIR)" config user.name "$(PACKAGE_PUBLISH_GIT_NAME)"
 	git -C "$(AUR_REPO_DIR)" config user.email "$(PACKAGE_PUBLISH_GIT_EMAIL)"
 	git -C "$(AUR_REPO_DIR)" add PKGBUILD .SRCINFO
@@ -47,10 +47,10 @@ publish-aur:
 	GIT_SSH_COMMAND='$(AUR_GIT_SSH_COMMAND)' git -C "$(AUR_REPO_DIR)" push
 
 publish-apt-repo:
-	./scripts/publish-apt-repo.sh
+	bash ./scripts/publish-apt-repo.sh
 
 publish-apt-site:
-	./scripts/publish-apt-repo.sh
+	bash ./scripts/publish-apt-repo.sh
 
 web-install:
 	$(NPM) ci
@@ -62,7 +62,10 @@ smoke-stream:
 	$(NPM) run test:smoke:chromium
 
 release-check:
-	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) ./scripts/release-check.sh
+	ICEY_SOURCE_DIR=$(ICEY_SOURCE_DIR) BUILD_DIR=$(BUILD_DIR) bash ./scripts/release-check.sh
+
+release-metadata-check:
+	bash ./scripts/validate-release-metadata.sh
 
 docker-build:
 	docker compose -f docker/compose.yaml build

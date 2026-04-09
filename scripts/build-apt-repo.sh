@@ -2,11 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
+eval "$(bash "$ROOT_DIR/scripts/release-context.sh")"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-release}"
-PACKAGE_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
 REPO_ROOT="${REPO_ROOT:-$ROOT_DIR/.stage/apt-repo}"
-REPO_ARCHIVE="${REPO_ARCHIVE:-$ROOT_DIR/icey-server-apt-repo-${PACKAGE_VERSION}.tar.gz}"
+REPO_ARCHIVE="${REPO_ARCHIVE:-$APT_REPO_ARCHIVE}"
 APT_SUITE="${APT_SUITE:-stable}"
 APT_COMPONENT="${APT_COMPONENT:-main}"
 APT_PUBLIC_DIR="${APT_PUBLIC_DIR:-$ROOT_DIR/.stage/apt-public}"
@@ -26,7 +25,7 @@ map_arch() {
 }
 
 DEB_ARCH="${DEB_ARCH:-$(map_arch)}"
-DEB_PATH="${DEB_PATH:-$ROOT_DIR/icey-server_${PACKAGE_VERSION}_${DEB_ARCH}.deb}"
+DEB_PATH="${DEB_PATH:-$ROOT_DIR/icey-server_${CLI_VERSION}_${DEB_ARCH}.deb}"
 
 if [[ ! -f "$DEB_PATH" ]]; then
   ICEY_SOURCE_DIR="$ICEY_SOURCE_DIR" BUILD_DIR="$BUILD_DIR" "$ROOT_DIR/scripts/build-deb.sh"
