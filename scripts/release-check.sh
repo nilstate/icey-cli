@@ -2,9 +2,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
+eval "$(bash "$ROOT_DIR/scripts/release-context.sh")"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-dev}"
 STAGE_DIR="${STAGE_DIR:-$ROOT_DIR/.stage/release-check}"
+
+bash "$ROOT_DIR/scripts/validate-release-metadata.sh"
 
 if [[ ! -f "$ICEY_SOURCE_DIR/CMakeLists.txt" ]]; then
   echo "ICEY_SOURCE_DIR does not point to an icey source tree: $ICEY_SOURCE_DIR" >&2

@@ -1,9 +1,6 @@
 name: Publish Package Managers
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -13,16 +10,28 @@ jobs:
   build-manifests:
     runs-on: ubuntu-24.04
     outputs:
-      cli_version: ${{ steps.versions.outputs.cli_version }}
-      icey_version: ${{ steps.versions.outputs.icey_version }}
+      cli_version: ${{ steps.context.outputs.cli_version }}
+      icey_version: ${{ steps.context.outputs.icey_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Read release context
+        id: context
+        run: |
+          echo "cli_version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+          echo "icey_version=$(tr -d '[:space:]' < ICEY_VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Checkout icey
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: nilstate/icey
+          ref: ${{ steps.context.outputs.icey_version }}
           path: icey
+
+      - name: Validate release metadata
+        run: bash ./scripts/validate-release-metadata.sh
 
       - name: Install dependencies
         run: |
@@ -42,12 +51,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-
-      - name: Read versions
-        id: versions
-        run: |
-          echo "cli_version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
-          echo "icey_version=$(tr -d '[:space:]' < icey/VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Check APT signing credentials
         id: apt-signing
@@ -89,7 +92,7 @@ jobs:
           ICEY_SOURCE_DIR: ${{ github.workspace }}/icey
           BUILD_DIR: ${{ github.workspace }}/build-release
           APT_BASE_URL: https://apt.0state.com/icey
-        run: ./scripts/package-manager-check.sh
+        run: bash ./scripts/package-manager-check.sh
 
       - uses: actions/upload-artifact@v4
         with:
@@ -119,7 +122,7 @@ jobs:
             echo "Skipping Homebrew publish: HOMEBREW_TAP_TOKEN is not configured."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
@@ -130,7 +133,7 @@ jobs:
 
       - name: Checkout tap repo
         if: steps.gate.outputs.publish == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: nilstate/homebrew-icey
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -140,7 +143,7 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         env:
           TAP_REPO_DIR: ${{ github.workspace }}/.stage/homebrew-icey
-        run: ./scripts/publish-homebrew.sh
+        run: bash ./scripts/publish-homebrew.sh
 
       - name: Commit formula update
         if: steps.gate.outputs.publish == 'true'
@@ -170,7 +173,7 @@ jobs:
             echo "Skipping APT publish: PACKAGES_REPO_TOKEN is not configured."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
@@ -187,7 +190,7 @@ jobs:
 
       - name: Checkout package repo
         if: steps.gate.outputs.publish == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: nilstate/0state-packages
           token: ${{ secrets.PACKAGES_REPO_TOKEN }}
@@ -202,7 +205,7 @@ jobs:
           APT_LIST_SOURCE: ${{ github.workspace }}/.stage/package-managers/rendered/apt/icey-server.list
           APT_REPO_PATH: icey
           APT_BASE_URL: https://apt.0state.com/icey
-        run: ./scripts/publish-apt-repo.sh
+        run: bash ./scripts/publish-apt-repo.sh
 
       - name: Commit package repo update
         if: steps.gate.outputs.publish == 'true'
@@ -236,7 +239,7 @@ jobs:
             echo "Skipping AUR publish: AUR_SSH_PRIVATE_KEY is not configured."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.gate.outputs.publish == 'true'
 
       - uses: actions/download-artifact@v4
@@ -265,7 +268,7 @@ jobs:
         if: steps.gate.outputs.publish == 'true'
         env:
           AUR_REPO_DIR: ${{ github.workspace }}/.stage/aur-repo
-        run: ./scripts/publish-aur.sh
+        run: bash ./scripts/publish-aur.sh
 
       - name: Commit AUR update
         if: steps.gate.outputs.publish == 'true'

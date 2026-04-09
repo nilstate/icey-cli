@@ -2,11 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ICEY_SOURCE_DIR="${ICEY_SOURCE_DIR:-$ROOT_DIR/../icey}"
+eval "$(bash "$ROOT_DIR/scripts/release-context.sh")"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build-release}"
 STAGE_DIR="${STAGE_DIR:-$ROOT_DIR/.stage/debian}"
 CONTROL_TEMPLATE="$ROOT_DIR/packaging/templates/debian/control.in"
-PACKAGE_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
 
 map_arch() {
   case "$(uname -m)" in
@@ -21,7 +20,7 @@ map_arch() {
 
 DEB_ARCH="${DEB_ARCH:-$(map_arch)}"
 DEB_DEPENDS="${DEB_DEPENDS:-ffmpeg, libssl3, libc6, libstdc++6}"
-PACKAGE_NAME="icey-server_${PACKAGE_VERSION}_${DEB_ARCH}"
+PACKAGE_NAME="icey-server_${CLI_VERSION}_${DEB_ARCH}"
 PACKAGE_ROOT="$STAGE_DIR/$PACKAGE_NAME"
 PACKAGE_PATH="${PACKAGE_PATH:-$ROOT_DIR/${PACKAGE_NAME}.deb}"
 
@@ -50,7 +49,7 @@ cmake --install "$BUILD_DIR" --prefix "$PACKAGE_ROOT/usr" --component apps
 
 sed \
   -e "s|@DEB_PACKAGE_NAME@|icey-server|g" \
-  -e "s|@CLI_VERSION@|$PACKAGE_VERSION|g" \
+  -e "s|@CLI_VERSION@|$CLI_VERSION|g" \
   -e "s|@DEB_ARCH@|$DEB_ARCH|g" \
   -e "s|@DEB_DEPENDS@|$DEB_DEPENDS|g" \
   "$CONTROL_TEMPLATE" > "$PACKAGE_ROOT/DEBIAN/control"
