@@ -24,6 +24,26 @@ if [[ -f "$ICEY_SOURCE_DIR/VERSION" ]]; then
   fi
 fi
 
+ICEY_HEAD_COMMIT=""
+ICEY_LOCAL_TAG_COMMIT=""
+ICEY_REMOTE_TAG_COMMIT=""
+if [[ -f "$ICEY_SOURCE_DIR/scripts/release-manifest.sh" ]]; then
+  eval "$(RELEASE_FETCH_ARCHIVE_META=0 bash "$ICEY_SOURCE_DIR/scripts/release-manifest.sh" "$ICEY_VERSION")"
+  ICEY_HEAD_COMMIT="$RELEASE_HEAD_COMMIT"
+  ICEY_LOCAL_TAG_COMMIT="$RELEASE_LOCAL_TAG_COMMIT"
+  ICEY_REMOTE_TAG_COMMIT="$RELEASE_REMOTE_TAG_COMMIT"
+
+  if [[ -n "$ICEY_LOCAL_TAG_COMMIT" && "$ICEY_HEAD_COMMIT" != "$ICEY_LOCAL_TAG_COMMIT" ]]; then
+    echo "ICEY_SOURCE_DIR local tag mismatch: expected exact icey tag $ICEY_VERSION at $ICEY_LOCAL_TAG_COMMIT, found checkout at $ICEY_HEAD_COMMIT" >&2
+    exit 1
+  fi
+
+  if [[ -n "$ICEY_REMOTE_TAG_COMMIT" && "$ICEY_HEAD_COMMIT" != "$ICEY_REMOTE_TAG_COMMIT" ]]; then
+    echo "ICEY_SOURCE_DIR remote tag mismatch: expected exact upstream icey tag $ICEY_VERSION at $ICEY_REMOTE_TAG_COMMIT, found checkout at $ICEY_HEAD_COMMIT" >&2
+    exit 1
+  fi
+fi
+
 CLI_TAG="v${CLI_VERSION}"
 ICEY_TAG="${ICEY_VERSION}"
 CLI_SOURCE_DIRNAME="icey-cli-${CLI_VERSION}"
@@ -51,6 +71,9 @@ printf 'ROOT_DIR=%q\n' "$ROOT_DIR"
 printf 'ICEY_SOURCE_DIR=%q\n' "$ICEY_SOURCE_DIR"
 printf 'CLI_VERSION=%q\n' "$CLI_VERSION"
 printf 'ICEY_VERSION=%q\n' "$ICEY_VERSION"
+printf 'ICEY_HEAD_COMMIT=%q\n' "$ICEY_HEAD_COMMIT"
+printf 'ICEY_LOCAL_TAG_COMMIT=%q\n' "$ICEY_LOCAL_TAG_COMMIT"
+printf 'ICEY_REMOTE_TAG_COMMIT=%q\n' "$ICEY_REMOTE_TAG_COMMIT"
 printf 'CLI_TAG=%q\n' "$CLI_TAG"
 printf 'ICEY_TAG=%q\n' "$ICEY_TAG"
 printf 'CLI_SOURCE_DIRNAME=%q\n' "$CLI_SOURCE_DIRNAME"
