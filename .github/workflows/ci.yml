@@ -68,8 +68,8 @@ jobs:
           test -f "$RUNNER_TEMP/icey-install/share/icey-server/web/index.html"
           "$RUNNER_TEMP/icey-install/bin/icey-server" --version
 
-      - name: Browser smoke
-        run: npm --prefix web run test:smoke:chromium
+      - name: Browser wedge smoke
+        run: npm --prefix web run test:smoke:chromium:stream-intelligence
 
       - name: Package manager cutover
         env:
