@@ -233,6 +233,7 @@ async function connect () {
     resetIntelligenceFeed('listening')
     startStats()
     startFrameTracker()
+    applyMinimumPlayoutDelay(calls?.player?.pc)
     // startAudioWaveform() is intentionally not called: the Chrome bug
     // around MediaStreamAudioSourceNode silencing the <video> element's
     // playback can still surface even with a cloned track. Keep the
@@ -1021,6 +1022,26 @@ function setLatency (ms) {
   // Healthy WebRTC jitter buffers sit at 20-80ms on a stable network.
   $metricLatency.classList.toggle('is-warn', rounded >= 100 && rounded < 250)
   $metricLatency.classList.toggle('is-bad', rounded >= 250)
+}
+
+// Ask the browser for the minimum playout delay it can manage on every
+// inbound video receiver. Browsers default to a defensive jitter buffer
+// (~100-200ms) that absorbs network variance; on a low-jitter link that
+// budget is wasted latency. Setting both property names covers the spec
+// migration: jitterBufferTarget is the current name (in milliseconds);
+// playoutDelayHint was the original (in seconds). Both are hints; the
+// browser may keep a deeper buffer if it observes real jitter.
+function applyMinimumPlayoutDelay (pc) {
+  if (!pc || typeof pc.getReceivers !== 'function') return
+  for (const receiver of pc.getReceivers()) {
+    if (receiver.track?.kind !== 'video') continue
+    if ('jitterBufferTarget' in receiver) {
+      try { receiver.jitterBufferTarget = 0 } catch (_) { /* read-only on this UA */ }
+    }
+    if ('playoutDelayHint' in receiver) {
+      try { receiver.playoutDelayHint = 0 } catch (_) { /* read-only on this UA */ }
+    }
+  }
 }
 
 // Pull the average per-frame jitter-buffer delay from RTCInboundRtpStreamStats.
