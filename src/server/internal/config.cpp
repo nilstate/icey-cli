@@ -106,6 +106,7 @@ ConfigLoadResult loadConfigResult(const std::string& path)
             c.source = m.value("source", c.source);
             c.recordDir = m.value("recordDir", c.recordDir);
             c.loop = m.value("loop", c.loop);
+            c.passthroughVideo = m.value("passthroughVideo", c.passthroughVideo);
             if (m.contains("video")) {
                 auto& v = m["video"];
                 c.videoCodec = v.value("codec", c.videoCodec);

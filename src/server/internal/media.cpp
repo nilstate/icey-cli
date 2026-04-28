@@ -584,6 +584,14 @@ void MediaSession::startStreaming()
         return;
     }
 
+    // Video passthrough is opt-in via config and only safe when the vision
+    // pipeline is off (motion detection needs decoded frames). Audio speech
+    // detection is independent and unaffected.
+    const bool passthroughVideo =
+        _config.passthroughVideo &&
+        _config.mode == Config::Mode::Stream &&
+        !_config.vision.enabled;
+
     if (!_capture) {
         _capture = std::make_shared<av::MediaCapture>();
         const bool live = isLiveNetworkSource(_config.source);
@@ -601,6 +609,8 @@ void MediaSession::startStreaming()
                 {"probesize", "200000"},
             });
         }
+        if (passthroughVideo)
+            _capture->setPassthroughVideo(true);
         _capture->openFile(_config.source);
         _capture->setLoopInput(live ? false : _config.loop);
         _capture->setLimitFramerate(!live);
@@ -611,12 +621,24 @@ void MediaSession::startStreaming()
         _stream.attachSource(_capture.get(), false, true);
 
         if (_session->media().hasVideo()) {
-            _videoEncoder = std::make_shared<av::VideoPacketEncoder>();
-            _capture->getEncoderVideoCodec(_videoEncoder->iparams);
-            _videoEncoder->oparams = makeVideoCodec(_config);
             _videoSender = &_session->media().videoSender();
-            _stream.attach(_videoEncoder, 1, true);
-            _stream.attach(_videoSender, 5, false);
+            if (passthroughVideo) {
+                // Encoded VideoPackets emitted by the capture flow straight
+                // to the WebRTC sender. No decode, no re-encode. Skipping
+                // the encoder also means makeVideoCodec is irrelevant here:
+                // the output codec is whatever the source already is. SDP
+                // negotiation must therefore have selected a codec that
+                // matches the source (typically H.264 Constrained Baseline,
+                // which is icey's default).
+                LInfo("Video pipeline: passthrough (no decode/re-encode)");
+                _stream.attach(_videoSender, 5, false);
+            } else {
+                _videoEncoder = std::make_shared<av::VideoPacketEncoder>();
+                _capture->getEncoderVideoCodec(_videoEncoder->iparams);
+                _videoEncoder->oparams = makeVideoCodec(_config);
+                _stream.attach(_videoEncoder, 1, true);
+                _stream.attach(_videoSender, 5, false);
+            }
         }
 
         // Only spin up the audio encoder if the source actually has audio.

@@ -86,6 +86,12 @@ struct Config
     std::string source;
     std::string recordDir = "./recordings";
     bool loop = true;
+    // When true, skip the icey-side decode + re-encode for video and forward
+    // the input H.264 packets directly to the WebRTC track. Trades intelligence
+    // (motion regions, vision overlays) for ~30-100ms of latency. Only honoured
+    // when intelligence is fully disabled and the source is browser-compatible
+    // H.264.
+    bool passthroughVideo = false;
 
     std::string videoCodec = "libx264";
     int videoWidth = 1280;
