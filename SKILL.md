@@ -24,11 +24,11 @@ This workflow is grounded in these repo files:
 - `.github/workflows/publish-package-managers.yml`: Homebrew, AUR, APT, and rendered manifest publication gates.
 - `packaging/README.md`: package-manager model, artifact names, generator scripts, and validation expectations.
 - `docker/README.md`: fastest demo path, host-networking assumptions, runtime overrides, and Compose source path.
-- `docs/facetime-on-macbook.md`: macOS realtime path. Covers libc++ portability, mediamtx TCP-only config, ffmpeg `-use_wallclock_as_timestamps`, audio resampler bring-up, the speaker default-mute, and the source-loss crash guard.
-- `scripts/facetime-demo.sh`: one-command bring-up for `mediamtx + ffmpeg(avfoundation) + icey-server` on macOS, fronted by the `make facetime-demo` target.
+- `docs/facetime-on-macbook.md`: macOS realtime path. Single-process bring-up via the `avfoundation:` URL scheme dispatched by `MediaCapture::openFile`. Covers permission prompts, audio resampler bring-up, and the speaker default-mute.
+- `scripts/facetime-demo.sh`: one-command single-process bring-up of `icey-server --source 'avfoundation:0:none'` on macOS, fronted by the `make facetime-demo` target.
 - `VERSION` and `ICEY_VERSION`: release context for this repo and the pinned core `nilstate/icey` dependency.
 
-At generation time this repo declared icey-server 0.2.1 and pinned icey 2.4.7.
+At generation time this repo declared icey-server 0.2.1 and pinned icey 2.4.8.
 
 ## When To Use This Skill
 
@@ -149,13 +149,13 @@ For local source-backed Docker validation:
 docker compose -f docker/compose.yaml up --build
 ```
 
-For the macOS realtime FaceTime path, exercise the dedicated helper. It brings up mediamtx, ffmpeg (avfoundation), and icey-server together and tears them all down on `Ctrl-C`:
+For the macOS realtime FaceTime path, exercise the dedicated helper. It runs a single icey-server process that opens AVFoundation directly via the `avfoundation:` URL scheme; `Ctrl-C` tears it down:
 
 ```bash
 make facetime-demo
 ```
 
-That target wraps `scripts/facetime-demo.sh`. macOS-only because of the avfoundation input. Setup details, including the `-use_wallclock_as_timestamps 1`, `-fps_mode cfr -r 30`, mediamtx TCP-only config, and speaker default-mute, are documented in `docs/facetime-on-macbook.md`.
+That target wraps `scripts/facetime-demo.sh`. macOS-only because of the avfoundation input. Setup details, including the device permission prompt, the audio capture default, and the speaker default-mute, are documented in `docs/facetime-on-macbook.md`.
 
 ### 5. Validate Packaging Or Release Changes
 

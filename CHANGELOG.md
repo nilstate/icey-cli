@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-04-28
+
+- Bumped the pinned `icey` dependency from `2.4.7` to `2.4.8` (cross-platform CI build fixes for Windows MSVC and Linux without libavdevice).
 - `scripts/facetime-demo.sh` rewritten as a single-process bring-up: just `icey-server --source 'avfoundation:0:none'`. mediamtx and the ffmpeg subprocess are gone, along with the orphaned `docs/mediamtx.yml`. Audio is off by default (`AUDIO_DEVICE=none`); set `AUDIO_DEVICE=0` to capture the built-in mic.
 - `docs/facetime-on-macbook.md` rewritten for the native single-process path. Drops the mediamtx and ffmpeg-CLI sections, the RTP-over-UDP loss workaround, and the duplicate-frame timestamp workaround. Adds a troubleshooting entry for the AVFoundation freeze that 2.4.7 fixed (`av_read_frame` returning `AVERROR(EAGAIN)`).
+- `SKILL.md` updated to describe the single-process M4 path instead of the prior `mediamtx + ffmpeg + icey-server` chain.
 
 ## 0.2.1 - 2026-04-28
 
