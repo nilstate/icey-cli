@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-04-28
+
+- Bumped the pinned `icey` dependency from `2.4.8` to `2.4.9` (codec registry now runtime-probes encoders so Linux CI no longer picks `h264_nvenc` on hosts without CUDA).
+
 ## 0.2.2 - 2026-04-28
 
 - Bumped the pinned `icey` dependency from `2.4.7` to `2.4.8` (cross-platform CI build fixes for Windows MSVC and Linux without libavdevice).
