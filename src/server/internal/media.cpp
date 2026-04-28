@@ -8,6 +8,7 @@
 #include "icy/webrtc/codecnegotiator.h"
 
 #include <chrono>
+#include <cstring>
 #include <iostream>
 
 
@@ -17,6 +18,17 @@ namespace {
 
 constexpr const char* kVisionSubtype = "icey:vision";
 constexpr const char* kSpeechSubtype = "icey:speech";
+
+
+bool isLiveNetworkSource(const std::string& source)
+{
+    static constexpr const char* kLivePrefixes[] = {
+        "rtsp://", "rtsps://", "rtmp://", "rtmps://", "srt://"};
+    for (const auto* prefix : kLivePrefixes)
+        if (source.compare(0, std::strlen(prefix), prefix) == 0)
+            return true;
+    return false;
+}
 
 
 struct QueuedSympleMessage
@@ -329,13 +341,30 @@ MediaSession::MediaSession(const std::string& peerId,
     _session->StateChanged += [this](wrtc::PeerSession::State state) {
         LInfo("Session ", _peerId, ": ", wrtc::stateToString(state));
         if (state == wrtc::PeerSession::State::Active) {
-            startStreaming();
-            startRecording();
-            startRelay();
-            if (_config.mode == Config::Mode::Record)
-                _session->media().requestKeyframe();
-            if (_relay)
-                _relay->onSessionActive(_peerId);
+            // Source open / encoder bring-up can throw — most commonly when
+            // the configured RTSP/HTTP source has gone away while the server
+            // is up. An uncaught throw here propagates out of the signal
+            // callback and terminates the process. Treat any failure as a
+            // soft session error: tear down what was started, hang up the
+            // call, and stay alive so the next peer can try again.
+            try {
+                startStreaming();
+                startRecording();
+                startRelay();
+                if (_config.mode == Config::Mode::Record)
+                    _session->media().requestKeyframe();
+                if (_relay)
+                    _relay->onSessionActive(_peerId);
+            }
+            catch (const std::exception& e) {
+                LError("Session ", _peerId, " bring-up failed: ", e.what());
+                try { stopRelay(); } catch (...) {}
+                try { stopRecording(); } catch (...) {}
+                try { stopStreaming(); } catch (...) {}
+                _capture.reset();
+                if (_session)
+                    _session->hangup(std::string("source unavailable: ") + e.what());
+            }
         }
         else if (state == wrtc::PeerSession::State::Ended) {
             if (_relay)
@@ -557,9 +586,24 @@ void MediaSession::startStreaming()
 
     if (!_capture) {
         _capture = std::make_shared<av::MediaCapture>();
+        const bool live = isLiveNetworkSource(_config.source);
+        if (live) {
+            _capture->setOpenOptions({
+                {"rtsp_transport", "tcp"},
+                {"fflags", "nobuffer"},
+                {"flags", "low_delay"},
+                {"max_delay", "0"},
+                {"reorder_queue_size", "0"},
+                // Enough to capture one H.264 keyframe with SPS/PPS so
+                // avformat_find_stream_info can populate codec parameters,
+                // but far below the libavformat defaults (5MB / 5s).
+                {"analyzeduration", "500000"},
+                {"probesize", "200000"},
+            });
+        }
         _capture->openFile(_config.source);
-        _capture->setLoopInput(_config.loop);
-        _capture->setLimitFramerate(true);
+        _capture->setLoopInput(live ? false : _config.loop);
+        _capture->setLimitFramerate(!live);
         setupIntelligence();
     }
 
@@ -748,12 +792,20 @@ void MediaSession::publishSpeechEvent(const speech::SpeechEvent& event)
 void MediaSession::publishIntelligenceMessage(const char* subtype, const json::Value& data)
 {
     if (!_publisher || !_session ||
-        _session->state() != wrtc::PeerSession::State::Active)
+        _session->state() != wrtc::PeerSession::State::Active) {
+        LDebug("Intelligence drop: publisher=", _publisher ? "yes" : "no",
+               " session=", _session ? "yes" : "no",
+               " state=", _session ? int(_session->state()) : -1,
+               " subtype=", subtype);
         return;
+    }
 
     smpl::Address address(_peerId);
-    if (!address.valid() || address.id.empty())
+    if (!address.valid() || address.id.empty()) {
+        LDebug("Intelligence drop: bad peer address ", _peerId);
         return;
+    }
+    LDebug("Intelligence emit ", subtype, " to ", _peerId);
 
     json::Value message;
     message["type"] = "message";
