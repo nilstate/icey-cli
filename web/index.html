@@ -37,8 +37,8 @@
 
     <div class="hud hud--top hud--right">
       <div id="metric-strip" class="metric-strip">
-        <div id="metric-latency" class="metric-cell metric-cell--latency" title="glass-to-glass latency">
-          <span class="metric-cell__label">latency</span>
+        <div id="metric-latency" class="metric-cell metric-cell--latency" title="average time each frame spends in the browser's jitter buffer (post-network, pre-display). Subset of end-to-end latency; not glass-to-glass.">
+          <span class="metric-cell__label">buffer</span>
           <span class="metric-cell__row">
             <canvas id="latency-spark" class="metric-cell__spark" width="64" height="14" aria-hidden="true"></canvas>
             <span id="latency-value" class="metric-cell__value">—</span>

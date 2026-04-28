@@ -789,26 +789,21 @@ function startFrameTracker () {
         : inst
     }
 
-    // Glass-to-glass latency from RTP timestamp.
-    // icey send path: rtpTs = (mp->time_us * clockRate) / 1e6 mod 2^32, where
-    // mp->time_us is wallclock at capture (ffmpeg -use_wallclock_as_timestamps).
-    // Browser-side we invert it symmetrically.
-    let latencyMs = null
+    // Glass-to-glass latency cannot be derived from rVFC alone in this
+    // pipeline: ffmpeg's RTP muxer rebases timestamps to a stream-relative
+    // origin, so metadata.rtpTimestamp does not encode capture wallclock.
+    // metadata.captureTime is only populated when the sender sets the
+    // abs-capture-time RTP extension, which icey doesn't yet. The buffer
+    // metric is fed from RTCInboundRtpStreamStats.jitterBufferDelay instead;
+    // see updateLatencyFromStats below.
     if (metadata?.captureTime) {
-      latencyMs = ts - metadata.captureTime
-    } else if (typeof metadata?.rtpTimestamp === 'number') {
-      const clockRate = frameTracker.videoClockRate || 90000
-      const nowMs = Date.now()
-      const nowRtp = ((nowMs * clockRate) / 1000) >>> 0
-      const rtpTs = metadata.rtpTimestamp >>> 0
-      const deltaRtp = (nowRtp - rtpTs) >>> 0
-      latencyMs = (deltaRtp * 1000) / clockRate
-    }
-    if (latencyMs != null && Number.isFinite(latencyMs) && latencyMs >= 0 && latencyMs < 5000) {
-      frameTracker.latencyEma = frameTracker.latencyEma > 0
-        ? frameTracker.latencyEma * 0.85 + latencyMs * 0.15
-        : latencyMs
-      setLatency(frameTracker.latencyEma)
+      const latencyMs = ts - metadata.captureTime
+      if (Number.isFinite(latencyMs) && latencyMs >= 0 && latencyMs < 5000) {
+        frameTracker.latencyEma = frameTracker.latencyEma > 0
+          ? frameTracker.latencyEma * 0.85 + latencyMs * 0.15
+          : latencyMs
+        setLatency(frameTracker.latencyEma)
+      }
     }
 
     pulseLiveBar()
@@ -1016,8 +1011,39 @@ function setLatency (ms) {
   }
   const rounded = Math.round(ms)
   $latencyValue.textContent = String(rounded)
-  $metricLatency.classList.toggle('is-warn', rounded >= 150 && rounded < 400)
-  $metricLatency.classList.toggle('is-bad', rounded >= 400)
+  // Threshold tuning is for jitter-buffer delay, not glass-to-glass.
+  // Healthy WebRTC jitter buffers sit at 20-80ms on a stable network.
+  $metricLatency.classList.toggle('is-warn', rounded >= 100 && rounded < 250)
+  $metricLatency.classList.toggle('is-bad', rounded >= 250)
+}
+
+// Pull the average per-frame jitter-buffer delay from RTCInboundRtpStreamStats.
+// This is the real, exact, no-side-channel measurement we can make from a
+// browser polling the standard webrtc-stats API: how long each frame sits in
+// the browser's de-jitter buffer between arriving and being played out.
+// A subset of total latency, but an honest one.
+function updateLatencyFromStats (stats) {
+  let inbound = null
+  for (const r of stats.values()) {
+    if (r.type === 'inbound-rtp' && r.kind === 'video') {
+      inbound = r
+      break
+    }
+  }
+  if (!inbound) return
+  const total = Number(inbound.jitterBufferDelay)
+  const count = Number(inbound.jitterBufferEmittedCount)
+  if (!Number.isFinite(total) || !Number.isFinite(count) || count <= 0) return
+
+  // jitterBufferDelay is cumulative seconds. Divide by frame count for the
+  // session-average per-frame delay in ms.
+  const avgMs = (total / count) * 1000
+  if (!Number.isFinite(avgMs) || avgMs < 0 || avgMs > 5000) return
+
+  frameTracker.latencyEma = frameTracker.latencyEma > 0
+    ? frameTracker.latencyEma * 0.7 + avgMs * 0.3
+    : avgMs
+  setLatency(frameTracker.latencyEma)
 }
 
 function setFps (fps) {
@@ -1071,6 +1097,7 @@ function startStats () {
       }
       setCodec([codec, dims].filter(Boolean).join(' '))
       setBitrate(bitrate)
+      updateLatencyFromStats(stats)
     } catch (_) { /* stats may fail during teardown */ }
   }, 1500)
 }
