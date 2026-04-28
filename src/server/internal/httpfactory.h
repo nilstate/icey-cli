@@ -29,6 +29,9 @@ public:
         std::string service = kServiceName;
         std::string version;
         std::string mode;
+        std::string source;
+        std::string sourceKind;
+        bool sourceRemote = false;
         std::function<json::Value()> statusProvider;
     };
 

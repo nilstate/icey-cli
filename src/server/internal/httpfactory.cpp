@@ -133,6 +133,9 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
                 j["service"] = _runtimeConfig.service;
                 j["version"] = _runtimeConfig.version;
                 j["mode"] = _runtimeConfig.mode;
+                j["source"]["value"] = _runtimeConfig.source;
+                j["source"]["kind"] = _runtimeConfig.sourceKind;
+                j["source"]["remote"] = _runtimeConfig.sourceRemote;
                 j["http"]["host"] = _runtimeConfig.host;
                 j["http"]["scheme"] = _runtimeConfig.enableTls ? "https" : "http";
                 j["http"]["tls"] = _runtimeConfig.enableTls;

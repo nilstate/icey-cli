@@ -6,6 +6,7 @@
 #include "runtimeinfo.h"
 #include "turnserver.h"
 
+#include "icy/av/devicemanager.h"
 #include "icy/av/ffmpeg.h"
 #include "icy/filesystem.h"
 #include "icy/logger.h"
@@ -45,6 +46,8 @@ std::string sourceKind(const std::string& source)
         return "none";
     if (source.rfind("rtsp://", 0) == 0)
         return "rtsp";
+    if (av::parseDeviceUrl(source))
+        return "device";
     if (source.find("://") != std::string::npos)
         return "url";
     if (source.rfind("/dev/", 0) == 0)
@@ -191,6 +194,9 @@ bool MediaServerApp::start()
                           kServiceName,
                           ICEY_SERVER_VERSION,
                           Config::modeName(_config.mode),
+                          _config.source,
+                          sourceKind(_config.source),
+                          isRemoteStreamSource(_config.source),
                           [this]() { return statusJson(); }
                       }));
 
@@ -354,7 +360,15 @@ json::Value MediaServerApp::doctorJson() const
                 "stream mode requires --source or media.source"));
             readyToRun = false;
         }
-        else if (!isRemoteStreamSource(_config.source)) {
+        else if (isRemoteStreamSource(_config.source)) {
+            checks.push_back(makeCheck("source", "pass",
+                "Using remote media source " + _config.source));
+        }
+        else if (av::parseDeviceUrl(_config.source)) {
+            checks.push_back(makeCheck("source", "pass",
+                "Using local device " + _config.source));
+        }
+        else {
             std::ifstream test(_config.source);
             if (test.is_open()) {
                 checks.push_back(makeCheck("source", "pass",
@@ -365,10 +379,6 @@ json::Value MediaServerApp::doctorJson() const
                     "Local media source not found: " + _config.source));
                 readyToRun = false;
             }
-        }
-        else {
-            checks.push_back(makeCheck("source", "pass",
-                "Using remote media source " + _config.source));
         }
     }
     else {

@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "visionartifacts.h"
+#include "icy/av/devicemanager.h"
 #include "icy/logger.h"
 #include "icy/queue.h"
 #include "icy/symple/address.h"
@@ -28,6 +29,12 @@ bool isLiveNetworkSource(const std::string& source)
         if (source.compare(0, std::strlen(prefix), prefix) == 0)
             return true;
     return false;
+}
+
+
+bool isDeviceSource(const std::string& source)
+{
+    return av::parseDeviceUrl(source).has_value();
 }
 
 
@@ -594,8 +601,10 @@ void MediaSession::startStreaming()
 
     if (!_capture) {
         _capture = std::make_shared<av::MediaCapture>();
-        const bool live = isLiveNetworkSource(_config.source);
-        if (live) {
+        const bool network = isLiveNetworkSource(_config.source);
+        const bool device = isDeviceSource(_config.source);
+        const bool live = network || device;
+        if (network) {
             _capture->setOpenOptions({
                 {"rtsp_transport", "tcp"},
                 {"fflags", "nobuffer"},
@@ -607,6 +616,12 @@ void MediaSession::startStreaming()
                 // but far below the libavformat defaults (5MB / 5s).
                 {"analyzeduration", "500000"},
                 {"probesize", "200000"},
+            });
+        } else if (device) {
+            _capture->setOpenOptions({
+                {"framerate", std::to_string(_config.videoFps)},
+                {"video_size", std::to_string(_config.videoWidth) + "x" +
+                                   std::to_string(_config.videoHeight)},
             });
         }
         if (passthroughVideo)
