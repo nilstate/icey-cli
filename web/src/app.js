@@ -88,7 +88,11 @@ const frameTracker = {
   // Rolling ring buffer of latency samples for the sparkline. One sample
   // per fpsInterval tick (every 500ms), so 60 samples = 30 seconds.
   latencyHistory: new Array(60).fill(null),
-  latencyHistoryIdx: 0
+  latencyHistoryIdx: 0,
+  // Previous getStats() jitter-buffer cumulative values, used to derive
+  // a poll-window-delta average instead of session-cumulative.
+  prevJbDelay: 0,
+  prevJbCount: 0
 }
 
 const audioMonitor = {
@@ -830,6 +834,8 @@ function stopFrameTracker () {
   $liveBar.classList.remove('is-stalled', 'is-pulsing')
   frameTracker.latencyHistory.fill(null)
   frameTracker.latencyHistoryIdx = 0
+  frameTracker.prevJbDelay = 0
+  frameTracker.prevJbCount = 0
   drawLatencySparkline()
 }
 
@@ -1022,6 +1028,13 @@ function setLatency (ms) {
 // browser polling the standard webrtc-stats API: how long each frame sits in
 // the browser's de-jitter buffer between arriving and being played out.
 // A subset of total latency, but an honest one.
+//
+// jitterBufferDelay and jitterBufferEmittedCount are session cumulative
+// totals, so dividing them gives the session average. That's misleading on
+// long calls because the average can only ever pull toward (not snap to)
+// the current buffer state. Take the delta between successive polls
+// instead, so the displayed number reflects what the buffer is actually
+// doing right now, not the last several minutes of history.
 function updateLatencyFromStats (stats) {
   let inbound = null
   for (const r of stats.values()) {
@@ -1031,18 +1044,33 @@ function updateLatencyFromStats (stats) {
     }
   }
   if (!inbound) return
-  const total = Number(inbound.jitterBufferDelay)
-  const count = Number(inbound.jitterBufferEmittedCount)
-  if (!Number.isFinite(total) || !Number.isFinite(count) || count <= 0) return
 
-  // jitterBufferDelay is cumulative seconds. Divide by frame count for the
-  // session-average per-frame delay in ms.
-  const avgMs = (total / count) * 1000
-  if (!Number.isFinite(avgMs) || avgMs < 0 || avgMs > 5000) return
+  const totalSec = Number(inbound.jitterBufferDelay)
+  const totalCount = Number(inbound.jitterBufferEmittedCount)
+  if (!Number.isFinite(totalSec) || !Number.isFinite(totalCount) || totalCount <= 0) return
 
+  const firstSample = frameTracker.prevJbCount === 0
+  const dDelay = totalSec - frameTracker.prevJbDelay
+  const dCount = totalCount - frameTracker.prevJbCount
+  frameTracker.prevJbDelay = totalSec
+  frameTracker.prevJbCount = totalCount
+
+  // First call after session start gives a delta that represents every
+  // frame since stream start, which is back to the cumulative case. Skip
+  // it so the EMA starts on a real instantaneous sample.
+  if (firstSample) return
+  if (dCount <= 0) return
+
+  const recentMs = (dDelay / dCount) * 1000
+  if (!Number.isFinite(recentMs) || recentMs < 0 || recentMs > 5000) return
+
+  // The poll window itself averages over ~45 frames (1.5s @ 30fps), which
+  // is already plenty of smoothing for a stable display. A heavy EMA on
+  // top adds a visible "climbing" lag during the first 30s of a session.
+  // Use a light single-pole filter just to clip single-poll spikes.
   frameTracker.latencyEma = frameTracker.latencyEma > 0
-    ? frameTracker.latencyEma * 0.7 + avgMs * 0.3
-    : avgMs
+    ? frameTracker.latencyEma * 0.4 + recentMs * 0.6
+    : recentMs
   setLatency(frameTracker.latencyEma)
 }
 
