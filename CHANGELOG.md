@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `scripts/facetime-demo.sh` rewritten as a single-process bring-up: just `icey-server --source 'avfoundation:0:none'`. mediamtx and the ffmpeg subprocess are gone, along with the orphaned `docs/mediamtx.yml`. Audio is off by default (`AUDIO_DEVICE=none`); set `AUDIO_DEVICE=0` to capture the built-in mic.
+- `docs/facetime-on-macbook.md` rewritten for the native single-process path. Drops the mediamtx and ffmpeg-CLI sections, the RTP-over-UDP loss workaround, and the duplicate-frame timestamp workaround. Adds a troubleshooting entry for the AVFoundation freeze that 2.4.7 fixed (`av_read_frame` returning `AVERROR(EAGAIN)`).
+
 ## 0.2.1 - 2026-04-28
 
 - `MediaSession` opens local OS cameras directly when `--source` is a libavdevice URL (`avfoundation:0:none`, `v4l2:/dev/video0`, `dshow:video=...`). Removes the `mediamtx + ffmpeg + RTSP` relay from the FaceTime camera demo on macOS; the same dispatch is wired for v4l2 (Linux) and dshow (Windows). Per-source demuxer hints (framerate, video_size) come from the existing `videoFps` / `videoWidth` / `videoHeight` config fields. Network-source RTSP options stay scoped to network sources only.

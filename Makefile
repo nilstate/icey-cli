@@ -70,8 +70,8 @@ release-metadata-check:
 docker-build:
 	docker compose -f docker/compose.yaml build
 
-# macOS-only: FaceTime camera to browser. Brings up mediamtx, ffmpeg
-# (avfoundation), and icey-server together. One Ctrl-C tears all three down.
-# Requires brew install ffmpeg mediamtx and a built icey-server + web/dist.
+# macOS-only: FaceTime camera to browser. Single-process: icey-server
+# opens AVFoundation directly via the `avfoundation:` URL scheme. One
+# Ctrl-C tears it down. Requires a built icey-server + web/dist.
 facetime-demo:
 	bash ./scripts/facetime-demo.sh
