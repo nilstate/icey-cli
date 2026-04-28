@@ -619,7 +619,12 @@ void MediaSession::startStreaming()
             _stream.attach(_videoSender, 5, false);
         }
 
-        if (_session->media().hasAudio()) {
+        // Only spin up the audio encoder if the source actually has audio.
+        // Negotiated SDP may include an audio track even when ffmpeg was
+        // started video-only (e.g. `-i 0:none`); without a decoded audio
+        // stream the encoder's input format is empty and the encoder open
+        // path throws when it tries to build a resampler against it.
+        if (_session->media().hasAudio() && _capture->audio()) {
             _audioEncoder = std::make_shared<av::AudioPacketEncoder>();
             _capture->getEncoderAudioCodec(_audioEncoder->iparams);
             _audioEncoder->oparams = makeAudioCodec(_config);
