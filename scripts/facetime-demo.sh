@@ -98,27 +98,29 @@ if ! lsof -nP -iTCP:8554 -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 green "==> ffmpeg (avfoundation ${VIDEO_DEVICE}:${AUDIO_DEVICE} -> RTSP/${RTSP_PATH})"
-audio_args=()
+# Build the ffmpeg command as one positional list. Bash 3.2 (the macOS
+# system bash) chokes on empty-array expansion under `set -u`, so the
+# audio encode flags are concatenated into a single args array instead.
+ffmpeg_args=(
+    -hide_banner -loglevel warning
+    -f avfoundation -framerate 30 -video_size 1280x720 -pixel_format nv12
+    -use_wallclock_as_timestamps 1
+    -i "${VIDEO_DEVICE}:${AUDIO_DEVICE}"
+    -fps_mode cfr -r 30
+    -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline
+    -pix_fmt yuv420p -g 60 -b:v 2M
+)
 if [[ "$AUDIO_DEVICE" != "none" ]]; then
-    audio_args=(-c:a aac -b:a 128k -ar 48000 -ac 2)
+    ffmpeg_args+=(-c:a aac -b:a 128k -ar 48000 -ac 2)
 fi
+ffmpeg_args+=(-f rtsp -rtsp_transport tcp "$RTSP_URL")
 
-"$FFMPEG_BIN" \
-    -hide_banner -loglevel warning \
-    -f avfoundation -framerate 30 -video_size 1280x720 -pixel_format nv12 \
-    -use_wallclock_as_timestamps 1 \
-    -i "${VIDEO_DEVICE}:${AUDIO_DEVICE}" \
-    -fps_mode cfr -r 30 \
-    -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline \
-    -pix_fmt yuv420p -g 60 -b:v 2M \
-    "${audio_args[@]}" \
-    -f rtsp -rtsp_transport tcp \
-    "$RTSP_URL" \
-    > "$LOG_DIR/ffmpeg.log" 2>&1 &
-PIDS+=($!)
+"$FFMPEG_BIN" "${ffmpeg_args[@]}" > "$LOG_DIR/ffmpeg.log" 2>&1 &
+ffmpeg_pid=$!
+PIDS+=("$ffmpeg_pid")
 sleep 2
 
-if ! kill -0 "${PIDS[-1]}" 2>/dev/null; then
+if ! kill -0 "$ffmpeg_pid" 2>/dev/null; then
     red "ffmpeg exited immediately. Last log:"
     tail -30 "$LOG_DIR/ffmpeg.log"
     exit 1
@@ -131,10 +133,11 @@ green "==> icey-server (--source ${RTSP_URL} --no-turn)"
     --port "$HTTP_PORT" \
     --no-turn \
     > "$LOG_DIR/icey.log" 2>&1 &
-PIDS+=($!)
+icey_pid=$!
+PIDS+=("$icey_pid")
 sleep 2
 
-if ! kill -0 "${PIDS[-1]}" 2>/dev/null; then
+if ! kill -0 "$icey_pid" 2>/dev/null; then
     red "icey-server exited. Last log:"
     tail -30 "$LOG_DIR/icey.log"
     exit 1
@@ -149,8 +152,6 @@ dim "stop:  Ctrl-C"
 echo
 
 # Tail the icey log to give a single readable feed in this terminal.
-tail -F "$LOG_DIR/icey.log" 2>/dev/null &
-PIDS+=($!)
-
-# Block until any background process exits or signal is delivered.
-wait -n
+# Runs in the foreground so Ctrl-C reaches us, fires the trap, and tears
+# down all three background processes.
+tail -F "$LOG_DIR/icey.log" 2>/dev/null
