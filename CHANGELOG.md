@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-04-28
+
+- `MediaSession` opens local OS cameras directly when `--source` is a libavdevice URL (`avfoundation:0:none`, `v4l2:/dev/video0`, `dshow:video=...`). Removes the `mediamtx + ffmpeg + RTSP` relay from the FaceTime camera demo on macOS; the same dispatch is wired for v4l2 (Linux) and dshow (Windows). Per-source demuxer hints (framerate, video_size) come from the existing `videoFps` / `videoWidth` / `videoHeight` config fields. Network-source RTSP options stay scoped to network sources only.
+- `--doctor` and the start-up preflight recognise device URLs and skip the local-file existence check.
+- `/api/config` now emits `source.value` / `source.kind` / `source.remote`, matching the existing doctor JSON shape. The web UI sidebar shows the configured source instead of "(no source configured)".
+- Bumped the pinned `icey` dependency from `2.4.6` to `2.4.7` (native device input, `avdevice_register_all` init, `MediaCapture::run` no longer treats `AVERROR(EAGAIN)` as fatal).
+- Browser smoke (`web/tests/browser-smoke.mjs`) updated for the 0.2.0 UI selectors (`status--online`, `is-hidden`, `codec-value` / `bitrate-value`) and now accepts device-URL sources via `MEDIA_SERVER_SOURCE='avfoundation:0:none'`. Validates the native device input path end-to-end on macOS.
+
 ## 0.2.0 - 2026-04-28
 
 - Rebuilt the bundled web UI as a video-first surface. Persistent dismissable side rail with peers, events, and pipeline stats. HUD overlays for glass-to-glass latency, fps, codec, bitrate, voice activity, and motion regions. Idle auto-fade for chrome and cursor. Speaker default-muted to avoid the FaceTime-mic-into-speakers feedback loop on a single-Mac demo

@@ -28,7 +28,7 @@ This workflow is grounded in these repo files:
 - `scripts/facetime-demo.sh`: one-command bring-up for `mediamtx + ffmpeg(avfoundation) + icey-server` on macOS, fronted by the `make facetime-demo` target.
 - `VERSION` and `ICEY_VERSION`: release context for this repo and the pinned core `nilstate/icey` dependency.
 
-At generation time this repo declared icey-server 0.2.0 and pinned icey 2.4.6.
+At generation time this repo declared icey-server 0.2.1 and pinned icey 2.4.7.
 
 ## When To Use This Skill
 
