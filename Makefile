@@ -1,6 +1,6 @@
 .PHONY: configure build install package package-deb package-apt package-managers \
 	publish-homebrew publish-aur publish-apt-repo publish-apt-site web-install web-build \
-	smoke-stream release-check release-metadata-check docker-build
+	smoke-stream release-check release-metadata-check docker-build facetime-demo
 
 ICEY_SOURCE_DIR ?= ../icey
 BUILD_DIR ?= build-dev
@@ -69,3 +69,9 @@ release-metadata-check:
 
 docker-build:
 	docker compose -f docker/compose.yaml build
+
+# macOS-only: FaceTime camera to browser. Brings up mediamtx, ffmpeg
+# (avfoundation), and icey-server together. One Ctrl-C tears all three down.
+# Requires brew install ffmpeg mediamtx and a built icey-server + web/dist.
+facetime-demo:
+	bash ./scripts/facetime-demo.sh

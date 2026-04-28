@@ -1,0 +1,4 @@
+rtspTransports: [tcp]
+
+paths:
+  all_others:
