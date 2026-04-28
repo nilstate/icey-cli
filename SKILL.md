@@ -17,16 +17,18 @@ This workflow is grounded in these repo files:
 - `README.md`: native quick start, Docker demo path, repo workflow, runtime modes, endpoints, browser smoke notes, and bring-up order.
 - `CMakeLists.txt`: C++20 project shape, `ICEY_SOURCE_DIR`, icey component requirements, install layout, and web UI install destination.
 - `CMakePresets.json`: `dev` and `release` configure/build presets using a sibling `../icey` checkout.
-- `Makefile`: canonical wrapper targets for configure, build, web, install, package, release, Docker, and package-manager validation.
+- `Makefile`: canonical wrapper targets for configure, build, web, install, package, release, Docker, package-manager validation, and the macOS-only `facetime-demo` helper.
 - `web/package.json`: Vite build and Playwright smoke commands for Chromium, Firefox, WebKit, and Docker smoke.
 - `.github/workflows/ci.yml`: Linux CI contract using Ubuntu 24.04, GCC 13, pinned `ICEY_VERSION`, web build, staged install, browser smoke, and package-manager cutover.
 - `.github/workflows/release.yml`: release package, Docker image, GitHub release assets, and optional package-manager publication flow.
 - `.github/workflows/publish-package-managers.yml`: Homebrew, AUR, APT, and rendered manifest publication gates.
 - `packaging/README.md`: package-manager model, artifact names, generator scripts, and validation expectations.
 - `docker/README.md`: fastest demo path, host-networking assumptions, runtime overrides, and Compose source path.
+- `docs/facetime-on-macbook.md`: macOS realtime path. Covers libc++ portability, mediamtx TCP-only config, ffmpeg `-use_wallclock_as_timestamps`, audio resampler bring-up, the speaker default-mute, and the source-loss crash guard.
+- `scripts/facetime-demo.sh`: one-command bring-up for `mediamtx + ffmpeg(avfoundation) + icey-server` on macOS, fronted by the `make facetime-demo` target.
 - `VERSION` and `ICEY_VERSION`: release context for this repo and the pinned core `nilstate/icey` dependency.
 
-At generation time this repo declared icey-server 0.1.3 and pinned icey 2.4.5.
+At generation time this repo declared icey-server 0.2.0 and pinned icey 2.4.6.
 
 ## When To Use This Skill
 
@@ -146,6 +148,14 @@ For local source-backed Docker validation:
 ```bash
 docker compose -f docker/compose.yaml up --build
 ```
+
+For the macOS realtime FaceTime path, exercise the dedicated helper. It brings up mediamtx, ffmpeg (avfoundation), and icey-server together and tears them all down on `Ctrl-C`:
+
+```bash
+make facetime-demo
+```
+
+That target wraps `scripts/facetime-demo.sh`. macOS-only because of the avfoundation input. Setup details, including the `-use_wallclock_as_timestamps 1`, `-fps_mode cfr -r 30`, mediamtx TCP-only config, and speaker default-mute, are documented in `docs/facetime-on-macbook.md`.
 
 ### 5. Validate Packaging Or Release Changes
 
