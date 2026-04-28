@@ -119,16 +119,19 @@ body {
   transition: opacity var(--duration) var(--ease);
 }
 
-.stage[data-idle="true"][data-empty="false"] {
+/* Auto-fade only applies in fullscreen. In windowed mode the HUD chrome is
+   the point of the demo (latency badge, voice meter, sparkline) so it
+   stays visible regardless of idle state. */
+.stage:fullscreen[data-idle="true"][data-empty="false"] {
   cursor: none;
 }
 
-.stage[data-idle="true"][data-empty="false"] .hud {
+.stage:fullscreen[data-idle="true"][data-empty="false"] .hud {
   opacity: 0;
   pointer-events: none;
 }
 
-.stage[data-idle="true"][data-empty="false"] .local-preview {
+.stage:fullscreen[data-idle="true"][data-empty="false"] .local-preview {
   opacity: 0.35;
 }
 
