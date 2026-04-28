@@ -22,7 +22,10 @@ FFMPEG_BIN="${FFMPEG_BIN:-ffmpeg}"
 MEDIAMTX_BIN="${MEDIAMTX_BIN:-mediamtx}"
 
 VIDEO_DEVICE="${VIDEO_DEVICE:-0}"
-AUDIO_DEVICE="${AUDIO_DEVICE:-none}"  # set to 0 to capture the built-in mic
+# Default to capturing the built-in mic. The browser-side speaker is
+# default-muted to prevent the FaceTime-mic-into-speakers feedback loop,
+# so this is safe. Set AUDIO_DEVICE=none for video-only.
+AUDIO_DEVICE="${AUDIO_DEVICE:-0}"
 RTSP_PATH="${RTSP_PATH:-cam}"
 RTSP_URL="rtsp://localhost:8554/${RTSP_PATH}"
 HTTP_PORT="${HTTP_PORT:-4500}"

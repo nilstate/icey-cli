@@ -229,7 +229,11 @@ async function connect () {
     resetIntelligenceFeed('listening')
     startStats()
     startFrameTracker()
-    startAudioWaveform()
+    // startAudioWaveform() is intentionally not called: the Chrome bug
+    // around MediaStreamAudioSourceNode silencing the <video> element's
+    // playback can still surface even with a cloned track. Keep the
+    // function in place behind the scenes; re-enable once we have a
+    // verified workaround (likely an HTMLAudioElement-based path).
     syncMuteButtons()
     updatePeerList()
   })
