@@ -57,7 +57,7 @@
           "gridWidth": 32,
           "gridHeight": 18,
           "warmupFrames": 2,
-          "threshold": 0.08,
+          "threshold": 0.04,
           "cooldownUsec": 500000
         }
       },

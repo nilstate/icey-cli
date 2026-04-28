@@ -89,6 +89,10 @@ const voiceState = {
 
 const visionState = {
   regions: [],
+  // Most recent motion grid (set of normalized 0..1 cell diffs) for the
+  // background heatmap. The grid is replaced on each event; nothing
+  // accumulates across events.
+  grid: null,
   rafId: 0
 }
 
@@ -554,20 +558,19 @@ function resetVoice () {
 // ---------------------------------------------------------------------------
 
 function handleVisionEvent (event) {
-  const fw = Number(event?.frame?.width || 0)
-  const fh = Number(event?.frame?.height || 0)
-  if (!fw || !fh) return
-
   const detections = Array.isArray(event?.detections) ? event.detections : []
   const now = performance.now()
   const ttl = 600
 
   for (const det of detections) {
+    // Region coords are already normalized 0..1 on the icey side. Do not
+    // divide by frame dimensions; that was a long-standing bug that
+    // collapsed every box to a single pixel near (0, 0).
     const region = det?.region || det
-    const x = Number(region?.x ?? 0) / fw
-    const y = Number(region?.y ?? 0) / fh
-    const w = Number(region?.width ?? region?.w ?? 0) / fw
-    const h = Number(region?.height ?? region?.h ?? 0) / fh
+    const x = Number(region?.x ?? 0)
+    const y = Number(region?.y ?? 0)
+    const w = Number(region?.width ?? region?.w ?? 0)
+    const h = Number(region?.height ?? region?.h ?? 0)
     if (!Number.isFinite(x) || !Number.isFinite(y) || w <= 0 || h <= 0) continue
 
     visionState.regions.push({
@@ -583,11 +586,26 @@ function handleVisionEvent (event) {
     visionState.regions.splice(0, visionState.regions.length - 64)
   }
 
+  // Per-cell normalized diff grid for the background heatmap. Replaced on
+  // each event; the grid itself fades over the same ttl as the bounding
+  // boxes via drawVisionRegions.
+  const grid = event?.data?.grid
+  if (grid && Array.isArray(grid.cells) && grid.width > 0 && grid.height > 0) {
+    visionState.grid = {
+      width: Number(grid.width),
+      height: Number(grid.height),
+      cells: grid.cells,
+      bornAt: now,
+      expiresAt: now + ttl
+    }
+  }
+
   ensureVisionLoop()
 }
 
 function resetVisionRegions () {
   visionState.regions.length = 0
+  visionState.grid = null
   if (visionState.rafId) {
     cancelAnimationFrame(visionState.rafId)
     visionState.rafId = 0
@@ -601,7 +619,8 @@ function ensureVisionLoop () {
   if (visionState.rafId) return
   const tick = () => {
     drawVisionRegions()
-    if (visionState.regions.length > 0) {
+    const more = visionState.regions.length > 0 || !!visionState.grid
+    if (more) {
       visionState.rafId = requestAnimationFrame(tick)
     } else {
       visionState.rafId = 0
@@ -646,6 +665,34 @@ function drawVisionRegions () {
   drawW *= dpr; drawH *= dpr; drawX *= dpr; drawY *= dpr
 
   const now = performance.now()
+
+  // Background heatmap from the latest grid. Draws under the bounding
+  // boxes so the boxes still pop. Cells fade in opacity by their normalized
+  // diff value, then the whole grid fades by age.
+  const grid = visionState.grid
+  if (grid && now <= grid.expiresAt) {
+    const gridAge = clamp((now - grid.bornAt) / (grid.expiresAt - grid.bornAt), 0, 1)
+    const gridAlpha = 1 - gridAge
+    const cellW = drawW / grid.width
+    const cellH = drawH / grid.height
+    for (let gy = 0; gy < grid.height; gy++) {
+      for (let gx = 0; gx < grid.width; gx++) {
+        const v = Number(grid.cells[gy * grid.width + gx]) || 0
+        if (v < 0.02) continue
+        const intensity = clamp(v * 2, 0, 1) * 0.45 * gridAlpha
+        if (intensity <= 0.01) continue
+        ctx.fillStyle = `rgba(248, 113, 113, ${intensity})`
+        ctx.fillRect(
+          drawX + gx * cellW,
+          drawY + gy * cellH,
+          cellW + 0.5,
+          cellH + 0.5)
+      }
+    }
+  } else if (grid) {
+    visionState.grid = null
+  }
+
   const remaining = []
   for (const r of visionState.regions) {
     if (now > r.expiresAt) continue
