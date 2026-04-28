@@ -5,15 +5,36 @@ import { CallManager } from 'symple-player'
 // DOM
 // ---------------------------------------------------------------------------
 
+const $root = document.documentElement
+const $stage = document.getElementById('stage')
 const $status = document.getElementById('status')
 const $peerList = document.getElementById('peer-list')
+const $peerCount = document.getElementById('peer-count')
 const $remoteVideo = document.getElementById('remote-video')
 const $localVideo = document.getElementById('local-video')
-const $overlay = document.getElementById('player-overlay')
+const $localPreview = document.getElementById('local-preview')
+const $playerOverlay = document.getElementById('player-overlay')
 const $controls = document.getElementById('controls')
+const $rail = document.getElementById('rail')
+const $railToggle = document.getElementById('rail-toggle')
+const $liveBar = document.getElementById('live-bar')
+
+const $sourceLabel = document.getElementById('source-label')
+const $railSource = document.getElementById('rail-source')
+const $railVersion = document.getElementById('rail-version')
 const $connInfo = document.getElementById('connection-info')
-const $statCodec = document.getElementById('stat-codec')
-const $statBitrate = document.getElementById('stat-bitrate')
+
+const $metricLatency = document.getElementById('metric-latency')
+const $latencyValue = document.getElementById('latency-value')
+const $fpsValue = document.getElementById('fps-value')
+const $codecValue = document.getElementById('codec-value')
+const $bitrateValue = document.getElementById('bitrate-value')
+
+const $voice = document.getElementById('voice')
+const $voiceBar = document.getElementById('voice-bar')
+const $voicePeak = document.getElementById('voice-peak')
+
+const $visionCanvas = document.getElementById('vision-overlay')
 const $eventList = document.getElementById('event-list')
 const $eventStatus = document.getElementById('event-status')
 const $intelligenceSourceFps = document.getElementById('intelligence-source-fps')
@@ -28,25 +49,53 @@ const $btnCamera = document.getElementById('btn-camera')
 const $btnFullscreen = document.getElementById('btn-fullscreen')
 const $btnHangup = document.getElementById('btn-hangup')
 
+const RAIL_PREF_KEY = 'icey:rail'
+const MAX_EVENTS = 12
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 let client = null
 let calls = null
-let audioMuted = false
-let videoMuted = false
+let user = ''
+let runtimeConfig = null
 let statsInterval = null
-const maxIntelligenceEvents = 12
+
+const callState = {
+  // Browser-side speaker (the <video> element's audio output). Default-muted
+  // on a single-machine demo because the FaceTime mic captured by ffmpeg will
+  // pick up the speakers and create a feedback loop. Unmute when on
+  // headphones or a separate device.
+  speakerMuted: true,
+  videoMuted: false
+}
+
+const frameTracker = {
+  lastFrameTs: 0,
+  framesSinceTick: 0,
+  fpsEma: 0,
+  latencyEma: 0,
+  videoClockRate: 90000,
+  rvfcHandle: 0,
+  fpsInterval: 0,
+  stallInterval: 0
+}
+
+const voiceState = {
+  decayTimer: 0,
+  peakTimer: 0
+}
+
+const visionState = {
+  regions: [],
+  rafId: 0
+}
 
 window.__mediaServerState = {
-  get client () {
-    return client
-  },
-  get calls () {
-    return calls
-  },
-  runtimeConfig: null
+  get client () { return client },
+  get calls () { return calls },
+  get runtimeConfig () { return runtimeConfig }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,16 +109,9 @@ function getWsUrl () {
 
 async function fetchRuntimeConfig () {
   const response = await fetch('/api/config')
-  if (!response.ok) {
-    throw new Error(`Failed to load runtime config: ${response.status}`)
-  }
-
+  if (!response.ok) throw new Error(`Failed to load runtime config: ${response.status}`)
   const config = await response.json()
-  if (!config || config.status !== 'ok') {
-    throw new Error('Invalid runtime config payload')
-  }
-
-  window.__mediaServerState.runtimeConfig = config
+  if (!config || config.status !== 'ok') throw new Error('Invalid runtime config payload')
   return config
 }
 
@@ -83,100 +125,78 @@ function buildIceServers (config) {
     const port = Number(turn.port) || 3478
     const username = turn.username || 'icey'
     const credential = turn.credential || 'icey'
-    servers.push({
-      urls: `turn:${host}:${port}?transport=udp`,
-      username,
-      credential
-    })
-    servers.push({
-      urls: `turn:${host}:${port}?transport=tcp`,
-      username,
-      credential
-    })
+    servers.push({ urls: `turn:${host}:${port}?transport=udp`, username, credential })
+    servers.push({ urls: `turn:${host}:${port}?transport=tcp`, username, credential })
   }
-
   const stunUrls = Array.isArray(config?.stun?.urls) ? config.stun.urls : []
-  for (const url of stunUrls) {
-    servers.push({ urls: url })
-  }
-
+  for (const url of stunUrls) servers.push({ urls: url })
   return servers
 }
 
-function formatConnectionInfo (url, user, runtimeConfig) {
-  const parts = [url, user]
-  if (runtimeConfig?.service) {
-    parts.push(runtimeConfig.service)
-  }
-  if (runtimeConfig?.mode) {
-    parts.push(runtimeConfig.mode)
-  }
-  if (runtimeConfig?.version) {
-    parts.push(`v${runtimeConfig.version}`)
-  }
-  return parts.join('  |  ')
+function applyRuntimeIdentity () {
+  const src = runtimeConfig?.source?.value
+    || runtimeConfig?.stream?.source
+    || ''
+  const mode = runtimeConfig?.mode || ''
+  $sourceLabel.textContent = src ? src : (mode ? `mode: ${mode}` : '—')
+  $railSource.textContent = src || '(no source configured)'
+  if (runtimeConfig?.version) $railVersion.textContent = `v${runtimeConfig.version}`
+
+  const parts = []
+  if (user) parts.push(user)
+  if (runtimeConfig?.service) parts.push(runtimeConfig.service)
+  if (runtimeConfig?.mode) parts.push(runtimeConfig.mode)
+  $connInfo.textContent = parts.length > 0 ? parts.join(' · ') : '—'
+
+  const productName = runtimeConfig?.product || 'icey'
+  document.title = runtimeConfig?.mode
+    ? `${productName} · ${runtimeConfig.mode}`
+    : productName
 }
 
 async function connect () {
   const url = getWsUrl()
-  $connInfo.textContent = `Connecting to ${url}...`
-  const runtimeConfig = await fetchRuntimeConfig()
-  const productName = runtimeConfig?.product || 'icey'
-  document.title = runtimeConfig?.mode
-    ? `${productName} | ${runtimeConfig.mode}`
-    : productName
+  setStatus('connecting')
 
-  const user = 'viewer-' + Math.random().toString(36).slice(2, 6)
+  runtimeConfig = await fetchRuntimeConfig()
+  user = 'viewer-' + Math.random().toString(36).slice(2, 6)
+  applyRuntimeIdentity()
 
   client = new SympleClient({
     url,
     token: '',
-    peer: {
-      user,
-      name: 'Browser Viewer',
-      type: 'viewer'
-    }
+    peer: { user, name: 'Browser Viewer', type: 'viewer' }
   })
 
   client.on('connect', () => {
-    setOnline(true)
-    $connInfo.textContent = formatConnectionInfo(url, user, runtimeConfig)
+    setStatus('online')
+    applyRuntimeIdentity()
     updatePeerList()
   })
 
-  client.on('presence', (p) => {
-    updatePeerList()
-  })
-
-  client.on('addPeer', () => {
-    updatePeerList()
-  })
-
-  client.on('removePeer', () => {
-    updatePeerList()
-  })
+  client.on('presence',  () => updatePeerList())
+  client.on('addPeer',   () => updatePeerList())
+  client.on('removePeer', () => updatePeerList())
 
   client.on('disconnect', () => {
-    setOnline(false)
-    $connInfo.textContent = 'Disconnected'
-    $peerList.innerHTML = ''
-    resetIntelligenceFeed('Disconnected')
+    setStatus('offline')
+    $peerList.innerHTML = '<li class="peer-empty">No peers online</li>'
+    setPeerCount(0)
+    // If a call was active, force-tear-down its UI state regardless of
+    // whether the call manager fires 'ended' on its own.
+    resetSessionState({ reason: 'disconnect' })
   })
 
-  // Set up call manager
+  client.on('error', (err) => console.error('Client error:', err))
+  client.on('message', (message) => handleSympleMessage(message))
+
   calls = new CallManager(client, $remoteVideo, {
-    rtcConfig: {
-      iceServers: buildIceServers(runtimeConfig)
-    },
-    mediaConstraints: {
-      audio: true,
-      video: true
-    },
+    rtcConfig: { iceServers: buildIceServers(runtimeConfig) },
+    mediaConstraints: { audio: true, video: true },
     localMedia: false
   })
 
-  calls.on('incoming', (peerId, msg) => {
-    // Auto-accept incoming calls from the server peer.
+  calls.on('incoming', (peerId) => {
     console.log('Incoming call from', peerId)
     calls.accept()
   })
@@ -184,39 +204,74 @@ async function connect () {
   calls.on('active', (peerId) => {
     console.log('Call active with', peerId)
     showControls(true)
-    $overlay.classList.add('hidden')
-    resetIntelligenceFeed('Listening for live events')
+    $stage.dataset.empty = 'false'
+    resetIntelligenceFeed('listening')
     startStats()
+    startFrameTracker()
+    syncMuteButtons()
+    updatePeerList()
   })
 
   calls.on('localstream', (stream) => {
     $localVideo.srcObject = stream
+    $localPreview.classList.remove('is-hidden')
   })
 
-  calls.on('ended', (peerId, reason) => {
+  calls.on('ended', (_peerId, reason) => {
     console.log('Call ended:', reason)
-    showControls(false)
-    $overlay.classList.remove('hidden')
-    $remoteVideo.srcObject = null
-    $localVideo.srcObject = null
-    resetIntelligenceFeed('Waiting for stream')
-    stopStats()
-    updatePeerList()
+    resetSessionState({ reason: 'ended' })
   })
 
-  calls.on('error', (err) => {
-    console.error('Call error:', err)
-  })
-
-  client.on('error', (err) => {
-    console.error('Client error:', err)
-  })
-
-  client.on('message', (message) => {
-    handleIntelligenceMessage(message)
-  })
+  calls.on('error', (err) => console.error('Call error:', err))
 
   client.connect()
+}
+
+// ---------------------------------------------------------------------------
+// Session-state reset (single source of truth)
+// ---------------------------------------------------------------------------
+
+function resetSessionState (_opts = {}) {
+  showControls(false)
+  $stage.dataset.empty = 'true'
+
+  if ($remoteVideo) $remoteVideo.srcObject = null
+  if ($localVideo) {
+    const stream = $localVideo.srcObject
+    if (stream) {
+      try { stream.getTracks().forEach((t) => t.stop()) } catch (_) {}
+    }
+    $localVideo.srcObject = null
+  }
+  $localPreview.classList.add('is-hidden')
+
+  callState.speakerMuted = true
+  callState.videoMuted = false
+  syncMuteButtons()
+
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {})
+  }
+
+  resetIntelligenceFeed('waiting')
+  stopStats()
+  stopFrameTracker()
+  resetVisionRegions()
+  resetVoice()
+  setLatency(null)
+  setFps(null)
+  setCodec(null)
+  setBitrate(null)
+
+  updatePeerList()
+}
+
+function syncMuteButtons () {
+  $btnMute.dataset.muted = callState.speakerMuted ? 'true' : 'false'
+  $btnMute.querySelector('.btn-ctl__glyph').textContent = callState.speakerMuted ? '🔇' : '🔊'
+  if ($remoteVideo) $remoteVideo.muted = !!callState.speakerMuted
+  $btnCamera.dataset.muted = callState.videoMuted ? 'true' : 'false'
+  $btnCamera.style.opacity = callState.videoMuted ? '0.55' : '1'
 }
 
 // ---------------------------------------------------------------------------
@@ -227,12 +282,15 @@ function updatePeerList () {
   if (!client || !client.roster) return
 
   $peerList.innerHTML = ''
-  const peers = client.roster.data
+  const peers = client.roster.data.filter((p) => p.id !== client.peer?.id)
+  setPeerCount(peers.length)
+
+  if (peers.length === 0) {
+    $peerList.innerHTML = '<li class="peer-empty">No peers online</li>'
+    return
+  }
 
   for (const peer of peers) {
-    // Skip self
-    if (peer.id === client.peer?.id) continue
-
     const li = document.createElement('li')
     li.className = 'peer-item'
 
@@ -246,163 +304,138 @@ function updatePeerList () {
     const name = document.createElement('span')
     name.className = 'peer-name'
     name.textContent = peer.name || peer.user || peer.id
-
-    const type = document.createElement('span')
-    type.className = 'peer-type'
-    type.textContent = peer.type || ''
-
     nameEl.appendChild(name)
+
     if (peer.type) {
-      nameEl.appendChild(document.createElement('br'))
+      const type = document.createElement('span')
+      type.className = 'peer-type'
+      type.textContent = peer.type
       nameEl.appendChild(type)
     }
 
     info.appendChild(dot)
     info.appendChild(nameEl)
 
-    const btn = document.createElement('button')
     const address = Symple.buildAddress(peer)
-    const inCall = calls && calls.remotePeerId === address
+    const inCall = !!(calls && calls.remotePeerId === address)
+    if (inCall) li.classList.add('is-active')
 
-    if (inCall) {
-      btn.textContent = 'Hangup'
-      btn.className = 'hangup'
-      btn.onclick = () => calls.hangup()
-      li.appendChild(info)
-      li.appendChild(btn)
-      $peerList.appendChild(li)
-      continue
-    }
-
-    const actions = getPeerActions(peer)
     const actionBar = document.createElement('div')
     actionBar.className = 'peer-actions'
-    for (const action of actions) {
-      const actionBtn = document.createElement('button')
-      actionBtn.textContent = action.label
-      actionBtn.className = action.className || ''
-      actionBtn.onclick = () => {
-        console.log(`${action.label} ${address}`)
-        calls.call(address, action.options)
+
+    if (inCall) {
+      const hangup = document.createElement('button')
+      hangup.textContent = 'Hangup'
+      hangup.className = 'hangup'
+      hangup.onclick = (ev) => { ev.stopPropagation(); calls.hangup() }
+      actionBar.appendChild(hangup)
+      li.classList.add('is-clickable')
+      li.onclick = () => calls.hangup()
+    } else {
+      const actions = getPeerActions(peer)
+      for (const action of actions) {
+        const btn = document.createElement('button')
+        btn.textContent = action.label
+        btn.onclick = (ev) => { ev.stopPropagation(); placeCall(address, action.options) }
+        actionBar.appendChild(btn)
       }
-      actionBar.appendChild(actionBtn)
+      // The whole row triggers the primary (first) action so misclicks on the
+      // name or empty space still do the obvious thing. Buttons keep their own
+      // handlers and stop propagation so they remain individually clickable.
+      const primary = actions[0]
+      if (primary) {
+        li.classList.add('is-clickable')
+        li.onclick = () => placeCall(address, primary.options)
+      }
     }
 
     li.appendChild(info)
     li.appendChild(actionBar)
     $peerList.appendChild(li)
   }
+}
 
-  if (peers.length === 0 || (peers.length === 1 && peers[0].id === client.peer?.id)) {
-    const li = document.createElement('li')
-    li.className = 'peer-item'
-    li.innerHTML = '<span class="peer-type">No peers online</span>'
-    $peerList.appendChild(li)
-  }
+function setPeerCount (n) {
+  if (!$peerCount) return
+  $peerCount.textContent = String(n)
 }
 
 function getPeerActions (peer) {
   const capabilities = Array.isArray(peer.capabilities) ? peer.capabilities : []
   const mode = typeof peer.mode === 'string' ? peer.mode : ''
+  // Enable WebRTC's built-in echo cancellation, noise suppression, and AGC
+  // for browser-captured audio. This handles the case where the browser's
+  // mic picks up its own speaker output. (It does NOT fix the FaceTime →
+  // ffmpeg path on this demo box — that is a server-side capture loop.)
+  const cleanAudio = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  }
   const publishConstraints = mode === 'record'
     ? { audio: false, video: true }
-    : { audio: true, video: true }
-  const watchConstraints = { audio: true, video: true }
+    : { audio: cleanAudio, video: true }
+  const watchConstraints = { audio: cleanAudio, video: true }
 
   if (capabilities.includes('publish') && capabilities.includes('view')) {
     return [
-      {
-        label: 'Broadcast',
-        options: {
-          localMedia: true,
-          receiveMedia: false,
-          mediaConstraints: publishConstraints
-        }
-      },
-      {
-        label: 'Watch',
-        options: {
-          localMedia: false,
-          mediaConstraints: watchConstraints
-        }
-      }
+      { label: 'Broadcast', options: { localMedia: true, receiveMedia: false, mediaConstraints: publishConstraints } },
+      { label: 'Watch', options: { localMedia: false, mediaConstraints: watchConstraints } }
     ]
   }
-
   if (capabilities.includes('publish')) {
-    return [{
-      label: 'Broadcast',
-      options: {
-        localMedia: true,
-        receiveMedia: false,
-        mediaConstraints: publishConstraints
-      }
-    }]
+    return [{ label: 'Broadcast', options: { localMedia: true, receiveMedia: false, mediaConstraints: publishConstraints } }]
   }
-
   if (capabilities.includes('view')) {
-    return [{
-      label: 'Watch',
-      options: {
-        localMedia: false,
-        mediaConstraints: watchConstraints
-      }
-    }]
+    return [{ label: 'Watch', options: { localMedia: false, mediaConstraints: watchConstraints } }]
   }
-
-  return [{
-      label: 'Call',
-      options: {
-        localMedia: true,
-        receiveMedia: true,
-        mediaConstraints: watchConstraints
-      }
-    }]
+  return [{ label: 'Call', options: { localMedia: true, receiveMedia: true, mediaConstraints: watchConstraints } }]
 }
 
-// ---------------------------------------------------------------------------
-// Controls
-// ---------------------------------------------------------------------------
-
-function showControls (visible) {
-  $controls.classList.toggle('hidden', !visible)
-}
-
-function resetIntelligenceFeed (statusText) {
-  if ($eventStatus) {
-    $eventStatus.textContent = statusText
-  }
-
-  if ($eventList) {
-    $eventList.innerHTML = '<li class="event-empty">No events yet</li>'
-  }
-
-  updateIntelligenceStats(null)
-}
-
-function handleIntelligenceMessage (message) {
-  const subtype = message?.subtype
-  if (subtype !== 'icey:vision' && subtype !== 'icey:speech') {
+function placeCall (address, options) {
+  console.debug('[icey] placeCall', address, 'calls?', !!calls,
+    'state:', calls?.callState, 'remote:', calls?.remotePeerId)
+  if (!calls) {
+    console.warn('[icey] placeCall: calls not initialised')
     return
   }
-
-  const kind = subtype === 'icey:vision' ? 'vision' : 'speech'
-  renderIntelligenceEvent(kind, message?.data || {})
+  if (calls.remotePeerId && calls.remotePeerId !== address) {
+    try { calls.hangup() } catch (e) { console.warn('[icey] hangup failed:', e) }
+  }
+  try {
+    calls.call(address, options)
+    console.debug('[icey] calls.call returned ok')
+  } catch (e) {
+    console.error('[icey] calls.call threw:', e)
+  }
 }
 
-function renderIntelligenceEvent (kind, event) {
+// ---------------------------------------------------------------------------
+// Symple intelligence messages
+// ---------------------------------------------------------------------------
+
+function handleSympleMessage (message) {
+  const subtype = message?.subtype
+  if (subtype === 'icey:vision' || subtype === 'icey:speech') {
+    console.debug('[icey] intelligence message', subtype, message)
+  }
+  if (subtype === 'icey:vision') {
+    handleVisionEvent(message?.data || {})
+    appendEventListEntry('vision', message?.data || {})
+    return
+  }
+  if (subtype === 'icey:speech') {
+    handleSpeechEvent(message?.data || {})
+    appendEventListEntry('speech', message?.data || {})
+  }
+}
+
+function appendEventListEntry (kind, event) {
   if (!$eventList) return
 
   const empty = $eventList.querySelector('.event-empty')
-  if (empty) {
-    empty.remove()
-  }
-
-  if ($eventStatus) {
-    $eventStatus.textContent = kind === 'vision'
-      ? 'Vision events live'
-      : 'Speech events live'
-  }
+  if (empty) empty.remove()
+  if ($eventStatus) $eventStatus.textContent = `${kind} · live`
 
   const item = document.createElement('li')
   item.className = `event-item ${kind}`
@@ -412,118 +445,382 @@ function renderIntelligenceEvent (kind, event) {
 
   const label = document.createElement('span')
   label.className = 'event-label'
-  label.textContent = kind === 'vision' ? 'Vision' : 'Speech'
+  label.textContent = kind
 
   const time = document.createElement('span')
   time.textContent = formatEventTime(event)
-
   meta.appendChild(label)
   meta.appendChild(time)
 
   const summary = document.createElement('div')
   summary.className = 'event-summary'
-  summary.textContent = describeIntelligenceEvent(kind, event)
+  summary.textContent = describeEvent(kind, event)
 
   item.appendChild(meta)
   item.appendChild(summary)
-  const artifactLinks = buildArtifactLinks(event)
-  if (artifactLinks.length > 0) {
-    const links = document.createElement('div')
-    links.className = 'event-links'
-    for (const artifact of artifactLinks) {
+
+  const links = buildArtifactLinks(event)
+  if (links.length > 0) {
+    const linksEl = document.createElement('div')
+    linksEl.className = 'event-links'
+    for (const a of links) {
       const link = document.createElement('a')
-      link.href = artifact.url
-      link.textContent = artifact.label
+      link.href = a.url
+      link.textContent = a.label
       link.target = '_blank'
       link.rel = 'noreferrer'
-      links.appendChild(link)
+      linksEl.appendChild(link)
     }
-    item.appendChild(links)
+    item.appendChild(linksEl)
   }
-  $eventList.prepend(item)
 
-  while ($eventList.children.length > maxIntelligenceEvents) {
+  $eventList.prepend(item)
+  while ($eventList.children.length > MAX_EVENTS) {
     $eventList.removeChild($eventList.lastElementChild)
   }
 }
 
 function buildArtifactLinks (event) {
   const links = []
-  const snapshotUrl = event?.data?.snapshot?.url
-  if (typeof snapshotUrl === 'string' && snapshotUrl.length > 0) {
-    links.push({ label: 'Snapshot', url: snapshotUrl })
-  }
-  const clipUrl = event?.data?.clip?.url
-  if (typeof clipUrl === 'string' && clipUrl.length > 0) {
-    links.push({ label: 'Clip', url: clipUrl })
-  }
+  const snapshot = event?.data?.snapshot?.url
+  if (typeof snapshot === 'string' && snapshot.length > 0) links.push({ label: 'snapshot', url: snapshot })
+  const clip = event?.data?.clip?.url
+  if (typeof clip === 'string' && clip.length > 0) links.push({ label: 'clip', url: clip })
   return links
 }
 
 function formatEventTime (event) {
   const usec = Number(
-    event?.frame?.ptsUsec ??
-    event?.audio?.timeUsec ??
-    event?.time ??
-    event?.audio?.time ??
-    event?.frame?.time ??
-    event?.emittedAtUsec ??
-    0
+    event?.frame?.ptsUsec ?? event?.audio?.timeUsec ?? event?.time ??
+    event?.audio?.time ?? event?.frame?.time ?? event?.emittedAtUsec ?? 0
   )
-  if (!Number.isFinite(usec) || usec <= 0) {
-    return 'live'
-  }
-
+  if (!Number.isFinite(usec) || usec <= 0) return 'live'
   return `${(usec / 1000000).toFixed(2)}s`
 }
 
-function describeIntelligenceEvent (kind, event) {
+function describeEvent (kind, event) {
   if (kind === 'vision') {
     const detection = Array.isArray(event?.detections) ? event.detections[0] : null
     const label = detection?.label || event?.detector || 'detection'
     const score = Number(detection?.confidence ?? event?.data?.score ?? 0)
-    return `${label} ${(score * 100).toFixed(1)}% confidence`
+    return score > 0 ? `${label} · ${(score * 100).toFixed(1)}%` : label
   }
-
   const level = Number(event?.level ?? 0)
   const state = typeof event?.type === 'string' ? event.type.replace('speech:', '') : 'event'
-  return `${state} at ${(level * 100).toFixed(1)}% level`
+  return `${state} · level ${(level * 100).toFixed(0)}%`
 }
 
-$btnMute.addEventListener('click', () => {
-  audioMuted = !audioMuted
-  calls?.muteAudio(audioMuted)
-  $btnMute.textContent = audioMuted ? '🔊' : '🔇'
-})
-
-$btnCamera.addEventListener('click', () => {
-  videoMuted = !videoMuted
-  calls?.muteVideo(videoMuted)
-  $btnCamera.style.opacity = videoMuted ? '0.5' : '1'
-})
-
-$btnFullscreen.addEventListener('click', () => {
-  const container = document.getElementById('player-container')
-  if (document.fullscreenElement) {
-    document.exitFullscreen()
-  } else {
-    container.requestFullscreen()
-  }
-})
-
-$btnHangup.addEventListener('click', () => {
-  calls?.hangup()
-})
+function resetIntelligenceFeed (statusText) {
+  if ($eventStatus) $eventStatus.textContent = statusText
+  if ($eventList) $eventList.innerHTML = '<li class="event-empty">No events yet</li>'
+  updateIntelligenceStats(null)
+}
 
 // ---------------------------------------------------------------------------
-// Stats
+// Voice activity
+// ---------------------------------------------------------------------------
+
+function handleSpeechEvent (event) {
+  const level = clamp(Number(event?.level ?? 0), 0, 1)
+  const peak = clamp(Number(event?.peak ?? 0), 0, 1)
+  const active = !!event?.active
+
+  $voice.dataset.active = active ? 'true' : 'false'
+  $voiceBar.style.width = `${level * 100}%`
+  $voicePeak.style.left = `${peak * 100}%`
+
+  clearTimeout(voiceState.decayTimer)
+  voiceState.decayTimer = setTimeout(() => {
+    $voice.dataset.active = 'false'
+    $voiceBar.style.width = '0%'
+  }, 600)
+
+  clearTimeout(voiceState.peakTimer)
+  voiceState.peakTimer = setTimeout(() => {
+    $voicePeak.style.left = '0%'
+  }, 1500)
+}
+
+function resetVoice () {
+  clearTimeout(voiceState.decayTimer)
+  clearTimeout(voiceState.peakTimer)
+  $voice.dataset.active = 'false'
+  $voiceBar.style.width = '0%'
+  $voicePeak.style.left = '0%'
+}
+
+// ---------------------------------------------------------------------------
+// Motion regions overlay (canvas)
+// ---------------------------------------------------------------------------
+
+function handleVisionEvent (event) {
+  const fw = Number(event?.frame?.width || 0)
+  const fh = Number(event?.frame?.height || 0)
+  if (!fw || !fh) return
+
+  const detections = Array.isArray(event?.detections) ? event.detections : []
+  const now = performance.now()
+  const ttl = 600
+
+  for (const det of detections) {
+    const region = det?.region || det
+    const x = Number(region?.x ?? 0) / fw
+    const y = Number(region?.y ?? 0) / fh
+    const w = Number(region?.width ?? region?.w ?? 0) / fw
+    const h = Number(region?.height ?? region?.h ?? 0) / fh
+    if (!Number.isFinite(x) || !Number.isFinite(y) || w <= 0 || h <= 0) continue
+
+    visionState.regions.push({
+      x, y, w, h,
+      label: det?.label || event?.detector || '',
+      conf: Number(det?.confidence ?? event?.data?.score ?? 0),
+      bornAt: now,
+      expiresAt: now + ttl
+    })
+  }
+
+  if (visionState.regions.length > 64) {
+    visionState.regions.splice(0, visionState.regions.length - 64)
+  }
+
+  ensureVisionLoop()
+}
+
+function resetVisionRegions () {
+  visionState.regions.length = 0
+  if (visionState.rafId) {
+    cancelAnimationFrame(visionState.rafId)
+    visionState.rafId = 0
+  }
+  if (!$visionCanvas) return
+  const ctx = $visionCanvas.getContext('2d')
+  if (ctx) ctx.clearRect(0, 0, $visionCanvas.width, $visionCanvas.height)
+}
+
+function ensureVisionLoop () {
+  if (visionState.rafId) return
+  const tick = () => {
+    drawVisionRegions()
+    if (visionState.regions.length > 0) {
+      visionState.rafId = requestAnimationFrame(tick)
+    } else {
+      visionState.rafId = 0
+    }
+  }
+  visionState.rafId = requestAnimationFrame(tick)
+}
+
+function drawVisionRegions () {
+  const canvas = $visionCanvas
+  const video = $remoteVideo
+  if (!canvas || !video) return
+
+  const rect = video.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  const targetW = Math.round(rect.width * dpr)
+  const targetH = Math.round(rect.height * dpr)
+  if (canvas.width !== targetW) canvas.width = targetW
+  if (canvas.height !== targetH) canvas.height = targetH
+
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  const videoW = video.videoWidth
+  const videoH = video.videoHeight
+  if (!videoW || !videoH) return
+
+  const elementAspect = rect.width / rect.height
+  const videoAspect = videoW / videoH
+  let drawW, drawH, drawX, drawY
+  if (videoAspect > elementAspect) {
+    drawW = rect.width
+    drawH = rect.width / videoAspect
+    drawX = 0
+    drawY = (rect.height - drawH) / 2
+  } else {
+    drawH = rect.height
+    drawW = rect.height * videoAspect
+    drawX = (rect.width - drawW) / 2
+    drawY = 0
+  }
+  drawW *= dpr; drawH *= dpr; drawX *= dpr; drawY *= dpr
+
+  const now = performance.now()
+  const remaining = []
+  for (const r of visionState.regions) {
+    if (now > r.expiresAt) continue
+    remaining.push(r)
+    const ageRatio = clamp((now - r.bornAt) / (r.expiresAt - r.bornAt), 0, 1)
+    const alpha = 1 - ageRatio
+
+    const x = drawX + r.x * drawW
+    const y = drawY + r.y * drawH
+    const w = r.w * drawW
+    const h = r.h * drawH
+
+    ctx.strokeStyle = `rgba(74, 222, 128, ${0.85 * alpha})`
+    ctx.lineWidth = 2 * dpr
+    ctx.strokeRect(x, y, w, h)
+
+    ctx.fillStyle = `rgba(74, 222, 128, ${0.08 * alpha})`
+    ctx.fillRect(x, y, w, h)
+
+    const tick = Math.min(12 * dpr, w / 4, h / 4)
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.85 * alpha})`
+    ctx.lineWidth = 1.5 * dpr
+    ctx.beginPath()
+    ctx.moveTo(x, y + tick); ctx.lineTo(x, y); ctx.lineTo(x + tick, y)
+    ctx.moveTo(x + w - tick, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + tick)
+    ctx.moveTo(x, y + h - tick); ctx.lineTo(x, y + h); ctx.lineTo(x + tick, y + h)
+    ctx.moveTo(x + w - tick, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - tick)
+    ctx.stroke()
+
+    if (r.label) {
+      ctx.font = `${11 * dpr}px ui-monospace, SFMono-Regular, Menlo, monospace`
+      const text = r.conf > 0
+        ? `${r.label} ${(r.conf * 100).toFixed(0)}%`
+        : r.label
+      const metrics = ctx.measureText(text)
+      const padding = 4 * dpr
+      const labelW = metrics.width + padding * 2
+      const labelH = 16 * dpr
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.55 * alpha})`
+      ctx.fillRect(x, y - labelH, labelW, labelH)
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+      ctx.fillText(text, x + padding, y - 4 * dpr)
+    }
+  }
+  visionState.regions = remaining
+}
+
+// ---------------------------------------------------------------------------
+// Frame callback — fps + live pulse + latency
+// ---------------------------------------------------------------------------
+
+function startFrameTracker () {
+  stopFrameTracker()
+  if (typeof $remoteVideo.requestVideoFrameCallback !== 'function') return
+
+  frameTracker.lastFrameTs = 0
+  frameTracker.framesSinceTick = 0
+  frameTracker.fpsEma = 0
+  frameTracker.latencyEma = 0
+
+  const onFrame = (now, metadata) => {
+    const ts = now
+    const delta = ts - frameTracker.lastFrameTs
+    frameTracker.lastFrameTs = ts
+    frameTracker.framesSinceTick++
+
+    if (delta > 0 && delta < 500) {
+      const inst = 1000 / delta
+      frameTracker.fpsEma = frameTracker.fpsEma > 0
+        ? frameTracker.fpsEma * 0.85 + inst * 0.15
+        : inst
+    }
+
+    // Glass-to-glass latency from RTP timestamp.
+    // icey send path: rtpTs = (mp->time_us * clockRate) / 1e6 mod 2^32, where
+    // mp->time_us is wallclock at capture (ffmpeg -use_wallclock_as_timestamps).
+    // Browser-side we invert it symmetrically.
+    let latencyMs = null
+    if (metadata?.captureTime) {
+      latencyMs = ts - metadata.captureTime
+    } else if (typeof metadata?.rtpTimestamp === 'number') {
+      const clockRate = frameTracker.videoClockRate || 90000
+      const nowMs = Date.now()
+      const nowRtp = ((nowMs * clockRate) / 1000) >>> 0
+      const rtpTs = metadata.rtpTimestamp >>> 0
+      const deltaRtp = (nowRtp - rtpTs) >>> 0
+      latencyMs = (deltaRtp * 1000) / clockRate
+    }
+    if (latencyMs != null && Number.isFinite(latencyMs) && latencyMs >= 0 && latencyMs < 5000) {
+      frameTracker.latencyEma = frameTracker.latencyEma > 0
+        ? frameTracker.latencyEma * 0.85 + latencyMs * 0.15
+        : latencyMs
+      setLatency(frameTracker.latencyEma)
+    }
+
+    pulseLiveBar()
+    frameTracker.rvfcHandle = $remoteVideo.requestVideoFrameCallback(onFrame)
+  }
+  frameTracker.rvfcHandle = $remoteVideo.requestVideoFrameCallback(onFrame)
+
+  frameTracker.fpsInterval = setInterval(() => {
+    setFps(frameTracker.fpsEma > 0 ? frameTracker.fpsEma : null)
+  }, 500)
+
+  frameTracker.stallInterval = setInterval(() => {
+    const sinceLast = performance.now() - frameTracker.lastFrameTs
+    if (sinceLast > 1000) $liveBar.classList.add('is-stalled')
+    else $liveBar.classList.remove('is-stalled')
+  }, 500)
+}
+
+function stopFrameTracker () {
+  if (frameTracker.fpsInterval) { clearInterval(frameTracker.fpsInterval); frameTracker.fpsInterval = 0 }
+  if (frameTracker.stallInterval) { clearInterval(frameTracker.stallInterval); frameTracker.stallInterval = 0 }
+  $liveBar.classList.remove('is-stalled', 'is-pulsing')
+}
+
+let pulseTimeout = 0
+function pulseLiveBar () {
+  $liveBar.classList.add('is-pulsing')
+  clearTimeout(pulseTimeout)
+  pulseTimeout = setTimeout(() => $liveBar.classList.remove('is-pulsing'), 80)
+}
+
+// ---------------------------------------------------------------------------
+// HUD setters
+// ---------------------------------------------------------------------------
+
+function setStatus (state) {
+  if (!$status) return
+  $status.classList.remove('status--online', 'status--offline', 'status--connecting')
+  $status.classList.add(`status--${state}`)
+  $status.textContent = state
+}
+
+function setLatency (ms) {
+  if (!$latencyValue) return
+  if (ms == null || !Number.isFinite(ms)) {
+    $latencyValue.textContent = '—'
+    $metricLatency?.classList.remove('is-warn', 'is-bad')
+    return
+  }
+  const rounded = Math.round(ms)
+  $latencyValue.textContent = String(rounded)
+  $metricLatency.classList.toggle('is-warn', rounded >= 150 && rounded < 400)
+  $metricLatency.classList.toggle('is-bad', rounded >= 400)
+}
+
+function setFps (fps) {
+  if (!$fpsValue) return
+  $fpsValue.textContent = fps == null ? '—' : fps.toFixed(0)
+}
+
+function setCodec (label) {
+  if (!$codecValue) return
+  $codecValue.textContent = label || '—'
+}
+
+function setBitrate (label) {
+  if (!$bitrateValue) return
+  $bitrateValue.textContent = label || '—'
+}
+
+function showControls (visible) {
+  $controls.classList.toggle('is-hidden', !visible)
+}
+
+// ---------------------------------------------------------------------------
+// Stats polling (codec, bitrate, intelligence)
 // ---------------------------------------------------------------------------
 
 function startStats () {
   stopStats()
   statsInterval = setInterval(async () => {
     if (!calls?.player?.pc) return
-
     try {
       const statusResponse = await fetch('/api/status')
       if (statusResponse.ok) {
@@ -532,22 +829,24 @@ function startStats () {
       }
 
       const stats = await calls.player.pc.getStats()
+      let codec = ''
+      let dims = ''
+      let bitrate = ''
       for (const report of stats.values()) {
         if (report.type === 'inbound-rtp' && report.kind === 'video') {
-          const codec = report.decoderImplementation || ''
-          const width = report.frameWidth
-          const height = report.frameHeight
-          $statCodec.textContent = codec && width ? `${codec} ${width}x${height}` : ''
+          if (report.decoderImplementation) codec = report.decoderImplementation
+          if (report.frameWidth) dims = `${report.frameWidth}×${report.frameHeight}`
         }
         if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-          const bitrate = report.availableIncomingBitrate
-          if (bitrate) {
-            $statBitrate.textContent = `${(bitrate / 1e6).toFixed(1)} Mbps`
+          if (report.availableIncomingBitrate) {
+            bitrate = `${(report.availableIncomingBitrate / 1e6).toFixed(1)} Mbps`
           }
         }
       }
+      setCodec([codec, dims].filter(Boolean).join(' '))
+      setBitrate(bitrate)
     } catch (_) { /* stats may fail during teardown */ }
-  }, 2000)
+  }, 1500)
 }
 
 function stopStats () {
@@ -555,61 +854,161 @@ function stopStats () {
     clearInterval(statsInterval)
     statsInterval = null
   }
-  $statCodec.textContent = ''
-  $statBitrate.textContent = ''
+  setCodec(null)
+  setBitrate(null)
   updateIntelligenceStats(null)
 }
 
 function updateIntelligenceStats (intelligence) {
   const vision = intelligence?.vision || null
-  const formatRate = (value) => {
-    const rate = Number(value)
-    return Number.isFinite(rate) && rate > 0 ? rate.toFixed(1) : '-'
+  const formatRate = (v) => {
+    const r = Number(v)
+    return Number.isFinite(r) && r > 0 ? r.toFixed(1) : '—'
   }
-  const formatCount = (value) => {
-    const count = Number(value)
-    return Number.isFinite(count) ? String(count) : '-'
+  const formatCount = (v) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? String(n) : '—'
   }
 
-  if ($intelligenceSourceFps) {
-    $intelligenceSourceFps.textContent = formatRate(vision?.sourceFps)
-  }
-  if ($intelligenceSampledFps) {
-    $intelligenceSampledFps.textContent = formatRate(vision?.sampledFps)
-  }
-  if ($intelligenceVisionQueue) {
-    $intelligenceVisionQueue.textContent = formatCount(vision?.queueDepth)
-  }
-  if ($intelligenceVisionDropped) {
-    $intelligenceVisionDropped.textContent = formatCount(vision?.queueDropped)
-  }
+  if ($intelligenceSourceFps) $intelligenceSourceFps.textContent = formatRate(vision?.sourceFps)
+  if ($intelligenceSampledFps) $intelligenceSampledFps.textContent = formatRate(vision?.sampledFps)
+  if ($intelligenceVisionQueue) $intelligenceVisionQueue.textContent = formatCount(vision?.queueDepth)
+  if ($intelligenceVisionDropped) $intelligenceVisionDropped.textContent = formatCount(vision?.queueDropped)
   if ($intelligenceLatency) {
-    const latencyUsec = Number(vision?.lastLatencyUsec)
-    $intelligenceLatency.textContent = Number.isFinite(latencyUsec) && latencyUsec > 0
-      ? `${(latencyUsec / 1000).toFixed(1)} ms`
-      : '-'
+    const usec = Number(vision?.lastLatencyUsec)
+    $intelligenceLatency.textContent = Number.isFinite(usec) && usec > 0
+      ? `${(usec / 1000).toFixed(1)} ms`
+      : '—'
   }
   if ($intelligenceArtifacts) {
-    const snapshots = formatCount(vision?.snapshots)
+    const snaps = formatCount(vision?.snapshots)
     const clips = formatCount(vision?.clips)
-    $intelligenceArtifacts.textContent = `${snapshots} / ${clips}`
+    $intelligenceArtifacts.textContent = `${snaps} / ${clips}`
   }
 }
 
 // ---------------------------------------------------------------------------
-// UI helpers
+// Rail toggle (persistent + keyboard)
 // ---------------------------------------------------------------------------
 
-function setOnline (online) {
-  $status.textContent = online ? 'Online' : 'Offline'
-  $status.className = 'status ' + (online ? 'online' : 'offline')
+function applyRailPref () {
+  // The inline boot script already set the initial value on <html> before
+  // first paint. Make sure it's normalised here in case the script failed.
+  if ($root.dataset.rail !== 'open' && $root.dataset.rail !== 'closed') {
+    $root.dataset.rail = 'open'
+  }
+}
+
+function toggleRail () {
+  const next = $root.dataset.rail === 'closed' ? 'open' : 'closed'
+  $root.dataset.rail = next
+  try { sessionStorage.setItem(RAIL_PREF_KEY, next) } catch (_) {}
+}
+
+$railToggle.addEventListener('click', toggleRail)
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts
+// ---------------------------------------------------------------------------
+
+document.addEventListener('keydown', (e) => {
+  const tag = e.target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  const k = e.key.toLowerCase()
+
+  if (k === 'e') { toggleRail(); e.preventDefault(); return }
+  if (k === 'escape') {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+    } else if ($root.dataset.rail === 'open') {
+      toggleRail()
+    }
+    return
+  }
+
+  // Call-only shortcuts
+  if (!calls?.remotePeerId) return
+  if (k === 'm') { toggleMute(); e.preventDefault() }
+  else if (k === 'v') { toggleCamera(); e.preventDefault() }
+  else if (k === 'f') { toggleFullscreen(); e.preventDefault() }
+})
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+
+function toggleMute () {
+  // Toggles browser speaker output (the remote <video>'s audio). On a
+  // single-machine demo we keep it muted by default to avoid the
+  // speaker→FaceTime-mic feedback loop. The outgoing-mic mute (relevant
+  // only when broadcasting from this tab) is handled by WebRTC's
+  // built-in echoCancellation constraint set on getUserMedia.
+  callState.speakerMuted = !callState.speakerMuted
+  syncMuteButtons()
+}
+
+function toggleCamera () {
+  callState.videoMuted = !callState.videoMuted
+  calls?.muteVideo(callState.videoMuted)
+  syncMuteButtons()
+}
+
+function toggleFullscreen () {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+  else $stage.requestFullscreen().catch(() => {})
+}
+
+$btnMute.addEventListener('click', toggleMute)
+$btnCamera.addEventListener('click', toggleCamera)
+$btnFullscreen.addEventListener('click', toggleFullscreen)
+$btnHangup.addEventListener('click', () => calls?.hangup())
+
+// ---------------------------------------------------------------------------
+// Idle / cursor auto-hide
+// ---------------------------------------------------------------------------
+
+const idleState = { timer: 0, idleAfterMs: 2400 }
+
+function bumpIdle () {
+  if ($stage.dataset.idle === 'true') $stage.dataset.idle = 'false'
+  clearTimeout(idleState.timer)
+  // Only go idle while a call is actually active. The empty state already
+  // shows minimal chrome, no point fading it.
+  if ($stage.dataset.empty === 'true') return
+  idleState.timer = setTimeout(() => {
+    $stage.dataset.idle = 'true'
+  }, idleState.idleAfterMs)
+}
+
+;['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'].forEach((evt) => {
+  window.addEventListener(evt, bumpIdle, { passive: true })
+})
+
+// Re-evaluate idle when the stage transitions in or out of empty (call
+// started or ended) so the cursor and chrome behave correctly across calls.
+const stageObserver = new MutationObserver(() => bumpIdle())
+stageObserver.observe($stage, { attributes: true, attributeFilter: ['data-empty'] })
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function clamp (v, min, max) {
+  if (!Number.isFinite(v)) return min
+  return v < min ? min : (v > max ? max : v)
 }
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
+applyRailPref()
+syncMuteButtons()
+setStatus('connecting')
+bumpIdle()
+
 connect().catch((err) => {
   console.error('Failed to initialize icey UI:', err)
-  $connInfo.textContent = 'Initialization failed'
+  if ($connInfo) $connInfo.textContent = 'init failed'
+  setStatus('offline')
 })

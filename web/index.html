@@ -5,66 +5,161 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>icey</title>
   <link rel="stylesheet" href="/src/style.css">
+  <script>
+    // Apply rail preference before first paint to avoid layout flicker.
+    try {
+      var pref = sessionStorage.getItem('icey:rail')
+      document.documentElement.setAttribute('data-rail', pref === 'closed' ? 'closed' : 'open')
+    } catch (e) {
+      document.documentElement.setAttribute('data-rail', 'open')
+    }
+  </script>
 </head>
 <body>
-  <header>
-    <h1>icey</h1>
-    <div id="status" class="status offline">Offline</div>
-  </header>
+  <main id="stage" class="stage" data-empty="true">
+    <video id="remote-video" class="stage__video" autoplay playsinline muted></video>
+    <canvas id="vision-overlay" class="stage__canvas" aria-hidden="true"></canvas>
 
-  <main>
-    <aside id="sidebar">
-      <h2>Peers</h2>
-      <ul id="peer-list"></ul>
-    </aside>
+    <div id="live-bar" class="live-bar" aria-hidden="true"></div>
 
-    <section id="media">
-      <div id="player-container">
-        <video id="remote-video" autoplay playsinline></video>
-        <div id="player-overlay" class="hidden">
-          <p>Select a peer and click Call to start</p>
+    <div id="player-overlay" class="stage__empty">
+      <div class="stage__empty-inner">
+        <span class="stage__empty-eyebrow">icey</span>
+        <p class="stage__empty-line">Pick a peer in the side panel to begin.</p>
+      </div>
+    </div>
+
+    <div class="hud hud--top hud--left">
+      <div class="source-pill" id="source-pill">
+        <span id="source-label" class="source-pill__label">—</span>
+      </div>
+    </div>
+
+    <div class="hud hud--top hud--right">
+      <div id="metric-strip" class="metric-strip">
+        <div id="metric-latency" class="metric-cell metric-cell--latency" title="glass-to-glass latency">
+          <span class="metric-cell__label">latency</span>
+          <span class="metric-cell__row">
+            <span id="latency-value" class="metric-cell__value">—</span>
+            <span class="metric-cell__unit">ms</span>
+          </span>
+        </div>
+        <div class="metric-cell" title="received frames per second">
+          <span class="metric-cell__label">fps</span>
+          <span class="metric-cell__row">
+            <span id="fps-value" class="metric-cell__value">—</span>
+          </span>
+        </div>
+        <div class="metric-cell" title="decoder + resolution">
+          <span class="metric-cell__label">codec</span>
+          <span class="metric-cell__row">
+            <span id="codec-value" class="metric-cell__value">—</span>
+          </span>
+        </div>
+        <div class="metric-cell" title="incoming bitrate">
+          <span class="metric-cell__label">bitrate</span>
+          <span class="metric-cell__row">
+            <span id="bitrate-value" class="metric-cell__value">—</span>
+          </span>
         </div>
       </div>
+    </div>
 
-      <div id="local-preview">
-        <video id="local-video" autoplay playsinline muted></video>
-      </div>
-
-      <div id="controls" class="hidden">
-        <button id="btn-mute" title="Mute">🔇</button>
-        <button id="btn-camera" title="Toggle camera">📹</button>
-        <button id="btn-fullscreen" title="Fullscreen">⛶</button>
-        <button id="btn-hangup" title="Hangup">📕</button>
-      </div>
-
-      <div id="stats">
-        <span id="stat-codec"></span>
-        <span id="stat-bitrate"></span>
-      </div>
-
-      <section id="intelligence-panel">
-        <div class="panel-header">
-          <h2>Live Intelligence</h2>
-          <span id="event-status">Waiting for stream</span>
+    <div class="hud hud--bottom hud--left">
+      <div id="voice" class="voice" data-active="false">
+        <div class="voice__ring" aria-hidden="true">
+          <div class="voice__ring-pulse"></div>
+          <span class="voice__icon">●</span>
         </div>
-        <dl id="intelligence-stats">
-          <div><dt>Source FPS</dt><dd id="intelligence-source-fps">-</dd></div>
-          <div><dt>Sampled FPS</dt><dd id="intelligence-sampled-fps">-</dd></div>
-          <div><dt>Vision Queue</dt><dd id="intelligence-vision-queue">-</dd></div>
-          <div><dt>Dropped</dt><dd id="intelligence-vision-dropped">-</dd></div>
-          <div><dt>Latency</dt><dd id="intelligence-latency">-</dd></div>
-          <div><dt>Artifacts</dt><dd id="intelligence-artifacts">-</dd></div>
-        </dl>
-        <ul id="event-list">
+        <div class="voice__meter" aria-hidden="true">
+          <div id="voice-bar" class="voice__bar"></div>
+          <div id="voice-peak" class="voice__peak"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud hud--bottom hud--center">
+      <div id="controls" class="controls is-hidden">
+        <button id="btn-mute" class="btn-ctl" data-muted="true" title="Speaker · click to unmute (M). Default muted on a single-Mac demo to avoid mic→speaker echo.">
+          <span class="btn-ctl__glyph">🔇</span>
+        </button>
+        <button id="btn-camera" class="btn-ctl" data-muted="false" title="Toggle camera (V)">
+          <span class="btn-ctl__glyph">📹</span>
+        </button>
+        <button id="btn-fullscreen" class="btn-ctl" title="Fullscreen (F)">
+          <span class="btn-ctl__glyph">⛶</span>
+        </button>
+        <button id="btn-hangup" class="btn-ctl btn-ctl--danger" title="Hangup">
+          <span class="btn-ctl__glyph">⏻</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="local-preview" class="local-preview is-hidden">
+      <video id="local-video" autoplay playsinline muted></video>
+    </div>
+  </main>
+
+  <aside id="rail" class="rail">
+    <button id="rail-toggle" class="rail-toggle" type="button" aria-label="Collapse panel" title="Collapse panel (E)">
+      <span class="rail-toggle__glyph">›</span>
+    </button>
+
+    <div class="rail__inner">
+      <header class="rail__brand">
+        <div class="rail__brand-row">
+          <span class="rail__wordmark">icey</span>
+          <span id="rail-version" class="rail__version">—</span>
+        </div>
+        <div id="status" class="status status--offline" aria-live="polite">offline</div>
+      </header>
+
+      <section class="rail__section">
+        <div class="rail__sec-head">
+          <h2>Source</h2>
+        </div>
+        <div id="rail-source" class="rail__source">—</div>
+      </section>
+
+      <section class="rail__section">
+        <div class="rail__sec-head">
+          <h2>Peers</h2>
+          <span id="peer-count" class="rail__hint">0</span>
+        </div>
+        <ul id="peer-list" class="peer-list">
+          <li class="peer-empty">No peers online</li>
+        </ul>
+      </section>
+
+      <section class="rail__section rail__section--scroll">
+        <div class="rail__sec-head">
+          <h2>Events</h2>
+          <span id="event-status" class="rail__hint">waiting</span>
+        </div>
+        <ul id="event-list" class="event-list">
           <li class="event-empty">No events yet</li>
         </ul>
       </section>
-    </section>
-  </main>
 
-  <footer>
-    <span id="connection-info"></span>
-  </footer>
+      <section class="rail__section">
+        <div class="rail__sec-head">
+          <h2>Pipeline</h2>
+        </div>
+        <dl id="intelligence-stats" class="stats">
+          <div><dt>source fps</dt><dd id="intelligence-source-fps">—</dd></div>
+          <div><dt>sampled fps</dt><dd id="intelligence-sampled-fps">—</dd></div>
+          <div><dt>vision queue</dt><dd id="intelligence-vision-queue">—</dd></div>
+          <div><dt>dropped</dt><dd id="intelligence-vision-dropped">—</dd></div>
+          <div><dt>vision latency</dt><dd id="intelligence-latency">—</dd></div>
+          <div><dt>artifacts</dt><dd id="intelligence-artifacts">—</dd></div>
+        </dl>
+      </section>
+
+      <footer class="rail__footer">
+        <span id="connection-info" class="rail__conn">—</span>
+      </footer>
+    </div>
+  </aside>
 
   <script type="module" src="/src/app.js"></script>
 </body>
