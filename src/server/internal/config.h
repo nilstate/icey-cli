@@ -93,7 +93,14 @@ struct Config
     // H.264.
     bool passthroughVideo = false;
 
-    std::string videoCodec = "libx264";
+    // "h264" (the codec alias) is the auto-pick sentinel: the codec
+    // registry resolves it to the best available H.264 encoder for this
+    // platform (h264_videotoolbox on macOS, h264_vaapi / h264_nvenc /
+    // h264_qsv on Linux, h264_qsv / h264_nvenc / h264_amf on Windows,
+    // libx264 fallback). Lookup is case-insensitive. Set to an explicit
+    // ffmpeg encoder name ("libx264", "h264_videotoolbox", ...) to
+    // override.
+    std::string videoCodec = "h264";
     int videoWidth = 1280;
     int videoHeight = 720;
     int videoFps = 30;

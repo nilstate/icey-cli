@@ -19,7 +19,7 @@
     "recordDir": "./recordings",
     "loop": true,
     "video": {
-      "codec": "libx264",
+      "codec": "h264",
       "width": 1280,
       "height": 720,
       "fps": 30,
