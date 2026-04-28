@@ -341,7 +341,7 @@ async function newPage(browser, baseUrl, label) {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => {
     const status = document.getElementById('status')
-    return status?.classList.contains('online')
+    return status?.classList.contains('status--online')
   }, null, { timeout: 15000 })
   await page.evaluate(() => {
     const state = globalThis.__mediaServerState
@@ -404,7 +404,7 @@ async function waitForActive(page) {
   try {
     await page.waitForFunction(() => {
       const controls = document.getElementById('controls')
-      return controls && !controls.classList.contains('hidden')
+      return controls && !controls.classList.contains('is-hidden')
     }, null, { timeout: 20000 })
   } catch (err) {
     const state = await capturePlaybackState(page)
@@ -423,9 +423,7 @@ async function waitForCallEnd(page) {
   try {
     await page.waitForFunction(() => {
       const controls = document.getElementById('controls')
-      const overlay = document.getElementById('player-overlay')
-      return Boolean(controls?.classList.contains('hidden')) &&
-        !overlay?.classList.contains('hidden')
+      return Boolean(controls?.classList.contains('is-hidden'))
     }, null, { timeout: 15000 })
   } catch (err) {
     const state = await capturePlaybackState(page)
@@ -438,8 +436,8 @@ async function capturePlaybackState(page) {
   return page.evaluate(async () => {
     const remote = document.getElementById('remote-video')
     const local = document.getElementById('local-video')
-    const codec = document.getElementById('stat-codec')
-    const bitrate = document.getElementById('stat-bitrate')
+    const codec = document.getElementById('codec-value')
+    const bitrate = document.getElementById('bitrate-value')
 
     const calls = globalThis.__mediaServerState?.calls || null
     const player = calls?.player || null
@@ -540,11 +538,13 @@ async function waitForInboundVideo(page) {
   try {
     await page.waitForFunction(() => {
       const video = document.getElementById('remote-video')
-      const codec = document.getElementById('stat-codec')
-      if (!video || !codec)
+      const codec = document.getElementById('codec-value')
+      if (!video)
         return false
+      const codecText = codec?.textContent?.trim() || ''
       return Boolean(video.srcObject) &&
-             (video.readyState >= 2 || video.currentTime > 0 || codec.textContent.trim().length > 0)
+             (video.readyState >= 2 || video.currentTime > 0 ||
+              (codecText.length > 0 && codecText !== '—'))
     }, null, { timeout: 20000 })
   } catch (err) {
     const state = await capturePlaybackState(page)
@@ -692,14 +692,20 @@ async function runRelayScenario(browser, webRoot) {
   })
 }
 
+function isDeviceSource(value) {
+  return /^(avfoundation|v4l2|dshow):/.test(value || '')
+}
+
 async function main() {
   const webRoot = path.resolve(__dirname, '../dist')
-  const sourceFile = await findFirstExisting([
-    process.env.MEDIA_SERVER_SOURCE,
-    candidatePath('icey/data/test.mp4'),
-    candidatePath('../icey/data/test.mp4'),
-    candidatePath('data/test.mp4')
-  ].filter(Boolean), 'media source')
+  const sourceFile = isDeviceSource(process.env.MEDIA_SERVER_SOURCE)
+    ? process.env.MEDIA_SERVER_SOURCE
+    : await findFirstExisting([
+        process.env.MEDIA_SERVER_SOURCE,
+        candidatePath('icey/data/test.mp4'),
+        candidatePath('../icey/data/test.mp4'),
+        candidatePath('data/test.mp4')
+      ].filter(Boolean), 'media source')
   const engine = selectedBrowserEngine()
   const scenarios = selectedScenarios()
 
@@ -707,7 +713,7 @@ async function main() {
     fail(`Built web UI not found at ${webRoot}. Run 'npm run build' in web first.`)
   if (!await exists(path.join(webRoot, 'index.html')))
     fail(`Expected ${path.join(webRoot, 'index.html')} to exist.`)
-  if (!await exists(sourceFile))
+  if (!isDeviceSource(sourceFile) && !await exists(sourceFile))
     fail(`Media source not found at ${sourceFile}.`)
 
   const browser = await launchBrowser()
