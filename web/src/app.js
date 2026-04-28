@@ -95,7 +95,8 @@ const audioMonitor = {
   ctx: null,
   analyser: null,
   buffer: null,
-  rafId: 0
+  rafId: 0,
+  cloneStream: null
 }
 
 const voiceState = {
@@ -911,15 +912,21 @@ function startAudioWaveform () {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext
     if (!Ctx) return
+
+    // Chrome silences the <video> element's audio playback if you create
+    // a MediaStreamAudioSourceNode from the same WebRTC remote stream
+    // it's playing. Workaround: feed the AnalyserNode a CLONE of the
+    // first audio track in its own dedicated MediaStream. The original
+    // stream stays attached to <video> and keeps playing as normal.
+    const cloneStream = new MediaStream([tracks[0].clone()])
+    audioMonitor.cloneStream = cloneStream
+
     audioMonitor.ctx = new Ctx()
     audioMonitor.analyser = audioMonitor.ctx.createAnalyser()
     audioMonitor.analyser.fftSize = 512
     audioMonitor.analyser.smoothingTimeConstant = 0.6
-    const src = audioMonitor.ctx.createMediaStreamSource(stream)
+    const src = audioMonitor.ctx.createMediaStreamSource(cloneStream)
     src.connect(audioMonitor.analyser)
-    // Deliberately do not connect the analyser to ctx.destination: we only
-    // want to read the data, not pipe it back to the speakers (which the
-    // <video> element is already responsible for).
     audioMonitor.buffer = new Uint8Array(audioMonitor.analyser.fftSize)
 
     const tick = () => {
@@ -943,9 +950,15 @@ function stopAudioWaveform () {
   if (audioMonitor.ctx) {
     try { audioMonitor.ctx.close() } catch (_) {}
   }
+  if (audioMonitor.cloneStream) {
+    try {
+      audioMonitor.cloneStream.getTracks().forEach((t) => t.stop())
+    } catch (_) {}
+  }
   audioMonitor.ctx = null
   audioMonitor.analyser = null
   audioMonitor.buffer = null
+  audioMonitor.cloneStream = null
   if ($waveform) {
     const ctx = $waveform.getContext('2d')
     ctx.clearRect(0, 0, $waveform.width, $waveform.height)
