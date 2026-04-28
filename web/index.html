@@ -40,6 +40,7 @@
         <div id="metric-latency" class="metric-cell metric-cell--latency" title="glass-to-glass latency">
           <span class="metric-cell__label">latency</span>
           <span class="metric-cell__row">
+            <canvas id="latency-spark" class="metric-cell__spark" width="64" height="14" aria-hidden="true"></canvas>
             <span id="latency-value" class="metric-cell__value">—</span>
             <span class="metric-cell__unit">ms</span>
           </span>
@@ -86,6 +87,9 @@
         <button id="btn-camera" class="btn-ctl" data-muted="false" title="Toggle camera (V)">
           <span class="btn-ctl__glyph">📹</span>
         </button>
+        <button id="btn-snapshot" class="btn-ctl" title="Snapshot · capture the current frame as PNG (S)">
+          <span class="btn-ctl__glyph">📸</span>
+        </button>
         <button id="btn-fullscreen" class="btn-ctl" title="Fullscreen (F)">
           <span class="btn-ctl__glyph">⛶</span>
         </button>
@@ -98,6 +102,9 @@
     <div id="local-preview" class="local-preview is-hidden">
       <video id="local-video" autoplay playsinline muted></video>
     </div>
+
+    <canvas id="waveform" class="waveform" aria-hidden="true"></canvas>
+    <div id="snapshot-flash" class="snapshot-flash" aria-hidden="true"></div>
   </main>
 
   <aside id="rail" class="rail">

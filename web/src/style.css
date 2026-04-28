@@ -331,6 +331,14 @@ body {
 .metric-cell--latency.is-warn .metric-cell__value { color: var(--warn); }
 .metric-cell--latency.is-bad  .metric-cell__value { color: var(--danger); }
 
+.metric-cell__spark {
+  display: block;
+  margin-right: 6px;
+  opacity: 0.85;
+  width: 64px;
+  height: 14px;
+}
+
 /* Voice activity (bottom-left) */
 .voice {
   display: flex;
@@ -468,6 +476,46 @@ body {
 .local-preview video {
   width: 100%;
   display: block;
+}
+
+/* Waveform: thin oscilloscope-style line at the very bottom edge of the
+   stage. Pulled from the remote audio track via Web Audio analyser, so it
+   reads as "audio is happening" even when the speaker is default-muted. */
+.waveform {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 36px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration) var(--ease);
+  z-index: 8;
+}
+
+.stage[data-empty="false"] .waveform {
+  opacity: 0.8;
+}
+
+/* Snapshot shutter flash: a brief white overlay to confirm capture. */
+.snapshot-flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 13;
+}
+
+.snapshot-flash.is-flashing {
+  animation: snapshot-flash 220ms ease-out;
+}
+
+@keyframes snapshot-flash {
+  0%   { opacity: 0;    }
+  10%  { opacity: 0.55; }
+  100% { opacity: 0;    }
 }
 
 /* ---------------------------------------------------------------------------

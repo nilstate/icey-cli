@@ -46,8 +46,13 @@ const $intelligenceArtifacts = document.getElementById('intelligence-artifacts')
 
 const $btnMute = document.getElementById('btn-mute')
 const $btnCamera = document.getElementById('btn-camera')
+const $btnSnapshot = document.getElementById('btn-snapshot')
 const $btnFullscreen = document.getElementById('btn-fullscreen')
 const $btnHangup = document.getElementById('btn-hangup')
+
+const $latencySpark = document.getElementById('latency-spark')
+const $waveform = document.getElementById('waveform')
+const $snapshotFlash = document.getElementById('snapshot-flash')
 
 const RAIL_PREF_KEY = 'icey:rail'
 const MAX_EVENTS = 12
@@ -79,7 +84,18 @@ const frameTracker = {
   videoClockRate: 90000,
   rvfcHandle: 0,
   fpsInterval: 0,
-  stallInterval: 0
+  stallInterval: 0,
+  // Rolling ring buffer of latency samples for the sparkline. One sample
+  // per fpsInterval tick (every 500ms), so 60 samples = 30 seconds.
+  latencyHistory: new Array(60).fill(null),
+  latencyHistoryIdx: 0
+}
+
+const audioMonitor = {
+  ctx: null,
+  analyser: null,
+  buffer: null,
+  rafId: 0
 }
 
 const voiceState = {
@@ -212,6 +228,7 @@ async function connect () {
     resetIntelligenceFeed('listening')
     startStats()
     startFrameTracker()
+    startAudioWaveform()
     syncMuteButtons()
     updatePeerList()
   })
@@ -260,6 +277,7 @@ function resetSessionState (_opts = {}) {
   resetIntelligenceFeed('waiting')
   stopStats()
   stopFrameTracker()
+  stopAudioWaveform()
   resetVisionRegions()
   resetVoice()
   setLatency(null)
@@ -795,6 +813,8 @@ function startFrameTracker () {
 
   frameTracker.fpsInterval = setInterval(() => {
     setFps(frameTracker.fpsEma > 0 ? frameTracker.fpsEma : null)
+    pushLatencySample(frameTracker.latencyEma > 0 ? frameTracker.latencyEma : null)
+    drawLatencySparkline()
   }, 500)
 
   frameTracker.stallInterval = setInterval(() => {
@@ -808,6 +828,58 @@ function stopFrameTracker () {
   if (frameTracker.fpsInterval) { clearInterval(frameTracker.fpsInterval); frameTracker.fpsInterval = 0 }
   if (frameTracker.stallInterval) { clearInterval(frameTracker.stallInterval); frameTracker.stallInterval = 0 }
   $liveBar.classList.remove('is-stalled', 'is-pulsing')
+  frameTracker.latencyHistory.fill(null)
+  frameTracker.latencyHistoryIdx = 0
+  drawLatencySparkline()
+}
+
+function pushLatencySample (ms) {
+  frameTracker.latencyHistory[frameTracker.latencyHistoryIdx] = ms
+  frameTracker.latencyHistoryIdx =
+    (frameTracker.latencyHistoryIdx + 1) % frameTracker.latencyHistory.length
+}
+
+function drawLatencySparkline () {
+  if (!$latencySpark) return
+  const canvas = $latencySpark
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.width = Math.round(canvas.clientWidth * dpr)
+  const h = canvas.height = Math.round(canvas.clientHeight * dpr)
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, w, h)
+
+  const buf = frameTracker.latencyHistory
+  const n = buf.length
+  // Read in oldest-first order from the ring buffer.
+  const start = frameTracker.latencyHistoryIdx
+  const samples = []
+  for (let i = 0; i < n; i++) {
+    const v = buf[(start + i) % n]
+    samples.push(v)
+  }
+
+  // Vertical scale: 0..200ms, clipped above. Anything above the live
+  // threshold (150ms) leans into amber; above 400ms is red. The live
+  // colour matches the latency value text colour.
+  const maxMs = 200
+  let strokeColor = 'rgba(74, 222, 128, 0.85)'
+  if ($metricLatency?.classList.contains('is-warn')) strokeColor = 'rgba(251, 191, 36, 0.85)'
+  if ($metricLatency?.classList.contains('is-bad'))  strokeColor = 'rgba(248, 113, 113, 0.85)'
+
+  ctx.strokeStyle = strokeColor
+  ctx.lineWidth = Math.max(1, dpr)
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  let started = false
+  for (let i = 0; i < n; i++) {
+    const v = samples[i]
+    if (v == null) { started = false; continue }
+    const x = (i / (n - 1)) * w
+    const y = h - (clamp(v, 0, maxMs) / maxMs) * h
+    if (!started) { ctx.moveTo(x, y); started = true }
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
 }
 
 let pulseTimeout = 0
@@ -815,6 +887,96 @@ function pulseLiveBar () {
   $liveBar.classList.add('is-pulsing')
   clearTimeout(pulseTimeout)
   pulseTimeout = setTimeout(() => $liveBar.classList.remove('is-pulsing'), 80)
+}
+
+// ---------------------------------------------------------------------------
+// Remote audio waveform
+//
+// Tap the remote MediaStream into a Web Audio AnalyserNode and render a
+// thin oscilloscope-style line at the bottom of the stage. This works even
+// when the <video> element itself is muted, because muted only controls
+// playback to speakers; the underlying track samples still flow through
+// any AudioNode wired up to the same MediaStream.
+// ---------------------------------------------------------------------------
+
+function startAudioWaveform () {
+  stopAudioWaveform()
+  const stream = $remoteVideo?.srcObject
+  if (!stream || !$waveform) return
+  const tracks = typeof stream.getAudioTracks === 'function'
+    ? stream.getAudioTracks()
+    : []
+  if (tracks.length === 0) return
+
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) return
+    audioMonitor.ctx = new Ctx()
+    audioMonitor.analyser = audioMonitor.ctx.createAnalyser()
+    audioMonitor.analyser.fftSize = 512
+    audioMonitor.analyser.smoothingTimeConstant = 0.6
+    const src = audioMonitor.ctx.createMediaStreamSource(stream)
+    src.connect(audioMonitor.analyser)
+    // Deliberately do not connect the analyser to ctx.destination: we only
+    // want to read the data, not pipe it back to the speakers (which the
+    // <video> element is already responsible for).
+    audioMonitor.buffer = new Uint8Array(audioMonitor.analyser.fftSize)
+
+    const tick = () => {
+      if (!audioMonitor.analyser) return
+      drawWaveform()
+      audioMonitor.rafId = requestAnimationFrame(tick)
+    }
+    audioMonitor.rafId = requestAnimationFrame(tick)
+  }
+  catch (e) {
+    console.warn('[icey] audio waveform unavailable:', e)
+    stopAudioWaveform()
+  }
+}
+
+function stopAudioWaveform () {
+  if (audioMonitor.rafId) {
+    cancelAnimationFrame(audioMonitor.rafId)
+    audioMonitor.rafId = 0
+  }
+  if (audioMonitor.ctx) {
+    try { audioMonitor.ctx.close() } catch (_) {}
+  }
+  audioMonitor.ctx = null
+  audioMonitor.analyser = null
+  audioMonitor.buffer = null
+  if ($waveform) {
+    const ctx = $waveform.getContext('2d')
+    ctx.clearRect(0, 0, $waveform.width, $waveform.height)
+  }
+}
+
+function drawWaveform () {
+  if (!audioMonitor.analyser || !$waveform) return
+  audioMonitor.analyser.getByteTimeDomainData(audioMonitor.buffer)
+
+  const canvas = $waveform
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.width = Math.round(canvas.clientWidth * dpr)
+  const h = canvas.height = Math.round(canvas.clientHeight * dpr)
+  const ctx = canvas.getContext('2d')
+  ctx.clearRect(0, 0, w, h)
+
+  const buf = audioMonitor.buffer
+  const n = buf.length
+  ctx.lineWidth = Math.max(1, dpr)
+  ctx.strokeStyle = 'rgba(147, 197, 253, 0.55)'
+  ctx.beginPath()
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * w
+    // buf values are 0..255 with 128 as silence midline; map to -1..1.
+    const v = (buf[i] - 128) / 128
+    const y = h / 2 + v * (h / 2 - 1)
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
 }
 
 // ---------------------------------------------------------------------------
@@ -977,6 +1139,7 @@ document.addEventListener('keydown', (e) => {
   if (!calls?.remotePeerId) return
   if (k === 'm') { toggleMute(); e.preventDefault() }
   else if (k === 'v') { toggleCamera(); e.preventDefault() }
+  else if (k === 's') { takeSnapshot(); e.preventDefault() }
   else if (k === 'f') { toggleFullscreen(); e.preventDefault() }
 })
 
@@ -1005,8 +1168,37 @@ function toggleFullscreen () {
   else $stage.requestFullscreen().catch(() => {})
 }
 
+function takeSnapshot () {
+  if (!$remoteVideo?.videoWidth) return
+  const c = document.createElement('canvas')
+  c.width = $remoteVideo.videoWidth
+  c.height = $remoteVideo.videoHeight
+  c.getContext('2d').drawImage($remoteVideo, 0, 0)
+  c.toBlob((blob) => {
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `icey-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, 'image/png')
+  flashStage()
+}
+
+function flashStage () {
+  if (!$snapshotFlash) return
+  $snapshotFlash.classList.remove('is-flashing')
+  // Force a reflow so re-adding the class triggers the animation again.
+  void $snapshotFlash.offsetWidth
+  $snapshotFlash.classList.add('is-flashing')
+}
+
 $btnMute.addEventListener('click', toggleMute)
 $btnCamera.addEventListener('click', toggleCamera)
+$btnSnapshot.addEventListener('click', takeSnapshot)
 $btnFullscreen.addEventListener('click', toggleFullscreen)
 $btnHangup.addEventListener('click', () => calls?.hangup())
 
