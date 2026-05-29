@@ -18,6 +18,8 @@ services:
       ICEY_PORT: ${ICEY_PORT:-4500}
       ICEY_TURN_PORT: ${ICEY_TURN_PORT:-3478}
       ICEY_TURN_EXTERNAL_IP: ${ICEY_TURN_EXTERNAL_IP:-}
+      ICEY_TURN_SECRET: ${ICEY_TURN_SECRET:-}
+      ICEY_AUTH_TOKEN: ${ICEY_AUTH_TOKEN:-}
       ICEY_SOURCE: ${ICEY_SOURCE:-/app/media/test.mp4}
       ICEY_RECORD_DIR: ${ICEY_RECORD_DIR:-/app/recordings}
     volumes:

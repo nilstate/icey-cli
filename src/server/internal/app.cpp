@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string_view>
 #include <vector>
 
 
@@ -88,6 +89,47 @@ json::Value makeCheck(const char* name,
     return check;
 }
 
+bool constantTimeEqual(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size() &&
+           CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
+}
+
+std::string originFor(const std::string& scheme,
+                      std::string host,
+                      uint16_t port)
+{
+    if (host.find(':') != std::string::npos &&
+        (host.empty() || host.front() != '[')) {
+        host = "[" + host + "]";
+    }
+    return scheme + "://" + host + ":" + std::to_string(port);
+}
+
+void addOrigin(std::vector<std::string>& origins,
+               const std::string& origin)
+{
+    if (origin.empty())
+        return;
+    for (const auto& existing : origins) {
+        if (existing == origin)
+            return;
+    }
+    origins.push_back(origin);
+}
+
+std::vector<std::string> makeAllowedOrigins(const Config& config)
+{
+    const std::string scheme = config.tls.enabled() ? "https" : "http";
+    std::vector<std::string> origins = config.allowedOrigins;
+    addOrigin(origins, originFor(scheme, "localhost", config.port));
+    addOrigin(origins, originFor(scheme, "127.0.0.1", config.port));
+    addOrigin(origins, originFor(scheme, "::1", config.port));
+    if (!isWildcardHost(config.host))
+        addOrigin(origins, originFor(scheme, config.host, config.port));
+    return origins;
+}
+
 } // namespace
 
 
@@ -124,6 +166,12 @@ bool MediaServerApp::start()
         for (const auto& warning : report["warnings"])
             std::cerr << "Warning: " << warning.get<std::string>() << '\n';
     }
+    if (_config.authToken.empty()) {
+        std::cerr << "Warning: ICEY_AUTH_TOKEN is not set; HTTP API and WebSocket control access are open.\n";
+    }
+    if (_config.enableTurn && _config.turnSecret.empty()) {
+        std::cerr << "Warning: TURN secret is not set; using demo TURN credentials.\n";
+    }
 
     if (_config.mode == Config::Mode::Record) {
         fs::mkdirr(_config.recordDir);
@@ -147,8 +195,12 @@ bool MediaServerApp::start()
     smpl::Server::Options symOpts;
     symOpts.host = _config.host;
     symOpts.port = _config.port;
-    symOpts.authentication = false;
+    symOpts.authentication = !_config.authToken.empty();
     symOpts.dynamicRooms = true;
+    symOpts.enforceOrigin = true;
+    symOpts.allowSameOrigin = true;
+    symOpts.originScheme = _config.tls.enabled() ? "https" : "http";
+    symOpts.allowedOrigins = makeAllowedOrigins(_config);
     if (_config.tls.enabled()) {
         std::string tlsDetail;
         symOpts.socket = createListenSocket(&tlsDetail);
@@ -159,12 +211,15 @@ bool MediaServerApp::start()
         }
     }
 
-    _symple.Authenticate += [](smpl::ServerPeer&,
-                               const json::Value&,
-                               bool& allowed,
-                               std::vector<std::string>& rooms) {
-        allowed = true;
-        rooms.push_back("public");
+    const std::string authToken = _config.authToken;
+    _symple.Authenticate += [authToken](smpl::ServerPeer&,
+                                        const json::Value& auth,
+                                        bool& allowed,
+                                        std::vector<std::string>& rooms) {
+        allowed = authToken.empty() ||
+                  constantTimeEqual(auth.value("token", ""), authToken);
+        if (allowed)
+            rooms.push_back("public");
     };
 
     _symple.PeerConnected += [](smpl::ServerPeer& peer) {
@@ -187,8 +242,12 @@ bool MediaServerApp::start()
                           _config.enableTurn,
                           _config.turnPort,
                           _config.turnExternalIP,
+                          _config.turnUsername,
+                          _config.turnSecret,
+                          _config.turnCredentialTtlSeconds,
                           _config.host,
                           _config.tls.enabled(),
+                          _config.authToken,
                           _config.recordDir,
                           kProductName,
                           kServiceName,
@@ -291,6 +350,7 @@ json::Value MediaServerApp::doctorJson() const
     j["turn"]["enabled"] = _config.enableTurn;
     j["turn"]["port"] = _config.turnPort;
     j["turn"]["externalIp"] = _config.turnExternalIP;
+    j["turn"]["localRelay"] = _config.turnAllowLocalRelay;
     j["tls"]["configured"] = _config.tls.configured();
     j["tls"]["enabled"] = _config.tls.enabled();
     j["tls"]["certFile"] = _config.tls.certFile;
@@ -420,6 +480,11 @@ json::Value MediaServerApp::doctorJson() const
     }
 
     if (_config.enableTurn) {
+        if (_config.turnSecret.empty()) {
+            warnings.push_back(
+                "TURN is using demo credentials; configure turn.secret before exposing the server.");
+            degraded = true;
+        }
         if (isWildcardHost(_config.host) && _config.turnExternalIP.empty()) {
             warnings.push_back(
                 "TURN externalIp is unset; remote NAT traversal may fail outside local or host-network testing.");
@@ -509,6 +574,7 @@ json::Value MediaServerApp::statusJson() const
     j["turn"]["enabled"] = _config.enableTurn;
     j["turn"]["port"] = _config.turnPort;
     j["turn"]["externalIp"] = _config.turnExternalIP;
+    j["turn"]["localRelay"] = _config.turnAllowLocalRelay;
     j["sessions"]["total"] = static_cast<std::uint64_t>(totalSessions);
     j["sessions"]["active"] = static_cast<std::uint64_t>(activeSessions);
     j["stream"]["source"] = _config.source;

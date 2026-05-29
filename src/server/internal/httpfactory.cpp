@@ -1,16 +1,113 @@
 #include "httpfactory.h"
 
 #include "icy/json/json.h"
+#include "turnserver.h"
 
+#include <openssl/crypto.h>
+
+#include <algorithm>
 #include <fstream>
+#include <string_view>
 
 
 namespace icy {
 namespace media_server {
 namespace {
 
-constexpr const char* kDemoTurnUsername = "icey";
-constexpr const char* kDemoTurnCredential = "icey";
+bool constantTimeEqual(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size() &&
+           CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
+}
+
+bool authorizedRequest(const http::Request& request,
+                       const std::string& token)
+{
+    if (token.empty())
+        return true;
+
+    const std::string auth = request.get("Authorization", std::string());
+    constexpr std::string_view prefix = "Bearer ";
+    if (auth.size() > prefix.size() &&
+        std::equal(prefix.begin(), prefix.end(), auth.begin())) {
+        return constantTimeEqual(std::string_view(auth).substr(prefix.size()), token);
+    }
+
+    const std::string headerToken = request.get("X-Icey-Token", std::string());
+    return constantTimeEqual(headerToken, token);
+}
+
+std::string stripUserInfo(std::string value)
+{
+    const auto scheme = value.find("://");
+    if (scheme == std::string::npos)
+        return value;
+
+    const auto authority = scheme + 3;
+    const auto slash = value.find('/', authority);
+    const auto at = value.find('@', authority);
+    if (at != std::string::npos &&
+        (slash == std::string::npos || at < slash)) {
+        value.erase(authority, at - authority + 1);
+    }
+    return value;
+}
+
+std::string publicPath(std::string value)
+{
+    value = stripUserInfo(std::move(value));
+    if (value.find("://") != std::string::npos)
+        return value;
+
+    const auto pos = value.find_last_of("/\\");
+    if (pos == std::string::npos)
+        return value;
+    return value.substr(pos + 1);
+}
+
+void scrubStatus(json::Value& j)
+{
+    if (j.contains("source") && j["source"].contains("value"))
+        j["source"]["value"] = publicPath(j["source"]["value"].get<std::string>());
+    if (j.contains("stream") && j["stream"].contains("source"))
+        j["stream"]["source"] = publicPath(j["stream"]["source"].get<std::string>());
+    if (j.contains("record") && j["record"].contains("dir"))
+        j["record"]["dir"] = publicPath(j["record"]["dir"].get<std::string>());
+    if (j.contains("web") && j["web"].contains("root"))
+        j["web"]["root"] = publicPath(j["web"]["root"].get<std::string>());
+    if (j.contains("config") && j["config"].contains("path"))
+        j["config"]["path"] = publicPath(j["config"]["path"].get<std::string>());
+    if (j.contains("tls") && j["tls"].contains("certFile"))
+        j["tls"]["certFile"] = publicPath(j["tls"]["certFile"].get<std::string>());
+    if (j.contains("checks") && j["checks"].is_array()) {
+        for (auto& check : j["checks"]) {
+            if (check.is_object() &&
+                check.contains("detail") &&
+                check["detail"].is_string()) {
+                check["detail"] = publicPath(check["detail"].get<std::string>());
+            }
+        }
+    }
+    if (j.contains("intelligence")) {
+        auto& intelligence = j["intelligence"];
+        if (intelligence.contains("vision")) {
+            auto& vision = intelligence["vision"];
+            if (vision.contains("snapshotDir"))
+                vision["snapshotDir"] = publicPath(vision["snapshotDir"].get<std::string>());
+            if (vision.contains("clipDir"))
+                vision["clipDir"] = publicPath(vision["clipDir"].get<std::string>());
+        }
+    }
+}
+
+TurnCredentials runtimeTurnCredentials(const HttpFactory::RuntimeConfig& runtime)
+{
+    Config config;
+    config.turnUsername = runtime.turnUsername;
+    config.turnSecret = runtime.turnSecret;
+    config.turnCredentialTtlSeconds = runtime.turnCredentialTtlSeconds;
+    return makeTurnCredentials(config);
+}
 
 
 class StaticFileResponder : public http::ServerResponder
@@ -127,13 +224,22 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
         void onRequest(http::Request& request, http::Response& response) override
         {
             json::Value j;
+            if (request.getURI() != "/api/health" &&
+                !authorizedRequest(request, _runtimeConfig.authToken)) {
+                response.setStatus(http::StatusCode::Unauthorized);
+                j["status"] = "error";
+                j["error"] = "unauthorized";
+                sendJson(response, j);
+                return;
+            }
+
             if (request.getURI() == "/api/config") {
                 j["status"] = "ok";
                 j["product"] = _runtimeConfig.product;
                 j["service"] = _runtimeConfig.service;
                 j["version"] = _runtimeConfig.version;
                 j["mode"] = _runtimeConfig.mode;
-                j["source"]["value"] = _runtimeConfig.source;
+                j["source"]["value"] = publicPath(_runtimeConfig.source);
                 j["source"]["kind"] = _runtimeConfig.sourceKind;
                 j["source"]["remote"] = _runtimeConfig.sourceRemote;
                 j["http"]["host"] = _runtimeConfig.host;
@@ -147,8 +253,9 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
                     ? _runtimeConfig.host
                     : _runtimeConfig.turnExternalIP;
                 j["turn"]["port"] = _runtimeConfig.turnPort;
-                j["turn"]["username"] = kDemoTurnUsername;
-                j["turn"]["credential"] = kDemoTurnCredential;
+                auto creds = runtimeTurnCredentials(_runtimeConfig);
+                j["turn"]["username"] = creds.username;
+                j["turn"]["credential"] = creds.credential;
                 j["stun"]["urls"] = json::Value::array({
                     "stun:stun.l.google.com:19302"
                 });
@@ -164,6 +271,7 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
                     j = _runtimeConfig.statusProvider();
                 else
                     j["ready"] = false;
+                scrubStatus(j);
                 if (!j.value("ready", false))
                     response.setStatus(http::StatusCode::Unavailable);
             }
@@ -172,12 +280,19 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
                     j = _runtimeConfig.statusProvider();
                 else
                     j["status"] = "ok";
+                scrubStatus(j);
             }
             else {
                 response.setStatus(http::StatusCode::NotFound);
                 j["status"] = "error";
                 j["error"] = "not_found";
             }
+            sendJson(response, j);
+        }
+
+    private:
+        void sendJson(http::Response& response, const json::Value& j)
+        {
             auto body = j.dump();
             response.setContentType("application/json");
             response.setContentLength(body.size());
@@ -185,7 +300,6 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createApiResponder(
             connection().send(body.data(), body.size());
         }
 
-    private:
         RuntimeConfig _runtimeConfig;
     };
 

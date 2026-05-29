@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 
 namespace icy {
@@ -80,6 +81,8 @@ struct Config
     uint16_t port = 4500;
     std::string webRoot = "./web/dist";
     TlsConfig tls;
+    std::string authToken;
+    std::vector<std::string> allowedOrigins;
 
     enum class Mode { Stream, Record, Relay };
     Mode mode = Mode::Stream;
@@ -117,6 +120,10 @@ struct Config
     uint16_t turnPort = 3478;
     std::string turnRealm = "0state.com";
     std::string turnExternalIP;
+    std::string turnUsername;
+    std::string turnSecret;
+    int turnCredentialTtlSeconds = 3600;
+    bool turnAllowLocalRelay = false;
 
     static Mode parseMode(const std::string& s);
     static const char* modeName(Mode mode);

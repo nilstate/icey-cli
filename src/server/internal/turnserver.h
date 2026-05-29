@@ -12,7 +12,16 @@ namespace icy {
 namespace media_server {
 
 
-class EmbeddedTurn : public turn::ServerObserver
+struct TurnCredentials
+{
+    std::string username;
+    std::string credential;
+};
+
+TurnCredentials makeTurnCredentials(const Config& config);
+
+
+class EmbeddedTurn final : public turn::ServerObserver
 {
 public:
     explicit EmbeddedTurn(const Config& config);
@@ -31,6 +40,8 @@ public:
 
 private:
     std::string _realm;
+    std::string _turnUsername;
+    std::string _turnSecret;
     std::unique_ptr<turn::Server> _server;
 };
 

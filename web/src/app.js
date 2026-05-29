@@ -55,6 +55,7 @@ const $waveform = document.getElementById('waveform')
 const $snapshotFlash = document.getElementById('snapshot-flash')
 
 const RAIL_PREF_KEY = 'icey:rail'
+const AUTH_TOKEN_KEY = 'icey:auth-token'
 const MAX_EVENTS = 12
 
 // ---------------------------------------------------------------------------
@@ -66,6 +67,7 @@ let calls = null
 let user = ''
 let runtimeConfig = null
 let statsInterval = null
+let authToken = ''
 
 const callState = {
   // Browser-side speaker (the <video> element's audio output). Default-muted
@@ -132,8 +134,25 @@ function getWsUrl () {
   return `${proto}//${location.host}`
 }
 
+function getAuthToken () {
+  const params = new URLSearchParams(location.search)
+  const fromUrl = params.get('token') || ''
+  if (fromUrl) {
+    sessionStorage.setItem(AUTH_TOKEN_KEY, fromUrl)
+    params.delete('token')
+    const query = params.toString()
+    history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`)
+    return fromUrl
+  }
+  return sessionStorage.getItem(AUTH_TOKEN_KEY) || ''
+}
+
+function authHeaders () {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
+}
+
 async function fetchRuntimeConfig () {
-  const response = await fetch('/api/config')
+  const response = await fetch('/api/config', { headers: authHeaders() })
   if (!response.ok) throw new Error(`Failed to load runtime config: ${response.status}`)
   const config = await response.json()
   if (!config || config.status !== 'ok') throw new Error('Invalid runtime config payload')
@@ -182,6 +201,7 @@ function applyRuntimeIdentity () {
 async function connect () {
   const url = getWsUrl()
   setStatus('connecting')
+  authToken = getAuthToken()
 
   runtimeConfig = await fetchRuntimeConfig()
   user = 'viewer-' + Math.random().toString(36).slice(2, 6)
@@ -189,7 +209,7 @@ async function connect () {
 
   client = new SympleClient({
     url,
-    token: '',
+    token: authToken,
     peer: { user, name: 'Browser Viewer', type: 'viewer' }
   })
 
@@ -515,10 +535,24 @@ function appendEventListEntry (kind, event) {
 function buildArtifactLinks (event) {
   const links = []
   const snapshot = event?.data?.snapshot?.url
-  if (typeof snapshot === 'string' && snapshot.length > 0) links.push({ label: 'snapshot', url: snapshot })
+  const safeSnapshot = safeArtifactUrl(snapshot)
+  if (safeSnapshot) links.push({ label: 'snapshot', url: safeSnapshot })
   const clip = event?.data?.clip?.url
-  if (typeof clip === 'string' && clip.length > 0) links.push({ label: 'clip', url: clip })
+  const safeClip = safeArtifactUrl(clip)
+  if (safeClip) links.push({ label: 'clip', url: safeClip })
   return links
+}
+
+function safeArtifactUrl (url) {
+  if (typeof url !== 'string' || url.length === 0) return ''
+  try {
+    const parsed = new URL(url, location.origin)
+    if (parsed.origin !== location.origin) return ''
+    if (!parsed.pathname.startsWith('/artifacts/')) return ''
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch (_) {
+    return ''
+  }
 }
 
 function formatEventTime (event) {

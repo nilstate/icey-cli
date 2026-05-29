@@ -5,6 +5,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -21,6 +22,26 @@ bool isRemoteStreamSource(const std::string& source)
         || source.rfind("udp:", 0) == 0
         || source.rfind("tcp:", 0) == 0
         || source.rfind("file:", 0) == 0;
+}
+
+std::vector<std::string> stringArray(const json::Value& value)
+{
+    std::vector<std::string> result;
+    if (!value.is_array())
+        return result;
+    for (const auto& item : value) {
+        if (item.is_string())
+            result.push_back(item.get<std::string>());
+    }
+    return result;
+}
+
+void applyEnvironment(Config& config)
+{
+    if (const char* token = std::getenv("ICEY_AUTH_TOKEN"))
+        config.authToken = token;
+    if (const char* secret = std::getenv("ICEY_TURN_SECRET"))
+        config.turnSecret = secret;
 }
 
 std::string resolvePathFromConfig(const std::string& configPath,
@@ -75,6 +96,7 @@ ConfigLoadResult loadConfigResult(const std::string& path)
 
     std::ifstream file(path);
     if (!result.exists) {
+        applyEnvironment(c);
         result.config = std::move(c);
         return result;
     }
@@ -82,6 +104,7 @@ ConfigLoadResult loadConfigResult(const std::string& path)
         result.valid = false;
         result.usedDefaults = false;
         result.error = "Cannot open config file";
+        applyEnvironment(c);
         result.config = std::move(c);
         return result;
     }
@@ -99,6 +122,12 @@ ConfigLoadResult loadConfigResult(const std::string& path)
             auto& t = j["tls"];
             c.tls.certFile = t.value("cert", c.tls.certFile);
             c.tls.keyFile = t.value("key", c.tls.keyFile);
+        }
+        if (j.contains("auth")) {
+            auto& a = j["auth"];
+            c.authToken = a.value("token", c.authToken);
+            if (a.contains("allowedOrigins"))
+                c.allowedOrigins = stringArray(a["allowedOrigins"]);
         }
         if (j.contains("media")) {
             auto& m = j["media"];
@@ -188,6 +217,12 @@ ConfigLoadResult loadConfigResult(const std::string& path)
             c.turnPort = t.value("port", c.turnPort);
             c.turnRealm = t.value("realm", c.turnRealm);
             c.turnExternalIP = t.value("externalIp", c.turnExternalIP);
+            c.turnUsername = t.value("username", c.turnUsername);
+            c.turnSecret = t.value("secret", c.turnSecret);
+            c.turnCredentialTtlSeconds = t.value(
+                "credentialTtlSeconds",
+                c.turnCredentialTtlSeconds);
+            c.turnAllowLocalRelay = t.value("allowLocalRelay", c.turnAllowLocalRelay);
         }
         if (j.contains("webRoot"))
             c.webRoot = j["webRoot"].get<std::string>();
@@ -203,6 +238,7 @@ ConfigLoadResult loadConfigResult(const std::string& path)
         c.webRoot = resolvePathFromConfig(path, c.webRoot);
         c.tls.certFile = resolvePathFromConfig(path, c.tls.certFile);
         c.tls.keyFile = resolvePathFromConfig(path, c.tls.keyFile);
+        applyEnvironment(c);
 
         result.config = std::move(c);
         result.usedDefaults = false;
@@ -214,6 +250,7 @@ ConfigLoadResult loadConfigResult(const std::string& path)
         result.config = std::move(c);
     }
 
+    applyEnvironment(result.config);
     return result;
 }
 

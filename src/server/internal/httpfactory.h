@@ -22,8 +22,12 @@ public:
         bool enableTurn = true;
         uint16_t turnPort = 3478;
         std::string turnExternalIP;
+        std::string turnUsername;
+        std::string turnSecret;
+        int turnCredentialTtlSeconds = 3600;
         std::string host;
         bool enableTls = false;
+        std::string authToken;
         std::string artifactRoot;
         std::string product = kProductName;
         std::string service = kServiceName;
