@@ -38,6 +38,9 @@
 #include "internal/config.h"
 #include "internal/runtimeinfo.h"
 
+#include <charconv>
+#include <cstdint>
+#include <iostream>
 #include <memory>
 #include <string>
 
@@ -92,6 +95,18 @@ bool parseModeArg(const std::string& value, media_server::Config::Mode& out)
         return true;
     }
     return false;
+}
+
+bool parsePortArg(const std::string& value, uint16_t& out)
+{
+    int port = 0;
+    auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), port);
+    if (ec != std::errc{} || ptr != value.data() + value.size() ||
+        port < 1 || port > 65535) {
+        return false;
+    }
+    out = static_cast<uint16_t>(port);
+    return true;
 }
 
 void resolvePackagedWebRoot(media_server::Config& config)
@@ -159,7 +174,12 @@ int main(int argc, char** argv)
             ++i;
         }
         else if (arg == "--port" && !val.empty()) {
-            config.port = static_cast<uint16_t>(std::stoi(val));
+            if (!parsePortArg(val, config.port)) {
+                std::cerr << "Error: invalid port '" << val << "'. Expected 1..65535.\n";
+                printUsage(argv[0]);
+                Logger::destroy();
+                return 1;
+            }
             ++i;
         }
         else if (arg == "--tls-cert" && !val.empty()) {
@@ -171,7 +191,12 @@ int main(int argc, char** argv)
             ++i;
         }
         else if (arg == "--turn-port" && !val.empty()) {
-            config.turnPort = static_cast<uint16_t>(std::stoi(val));
+            if (!parsePortArg(val, config.turnPort)) {
+                std::cerr << "Error: invalid turn port '" << val << "'. Expected 1..65535.\n";
+                printUsage(argv[0]);
+                Logger::destroy();
+                return 1;
+            }
             ++i;
         }
         else if (arg == "--turn-external-ip" && !val.empty()) {
