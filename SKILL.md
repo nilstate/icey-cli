@@ -28,7 +28,7 @@ This workflow is grounded in these repo files:
 - `scripts/facetime-demo.sh`: one-command single-process bring-up of `icey-server --source 'avfoundation:0:none'` on macOS, fronted by the `make facetime-demo` target.
 - `VERSION` and `ICEY_VERSION`: release context for this repo and the pinned core `nilstate/icey` dependency.
 
-At generation time this repo declared icey-server 0.2.3 and pinned icey 2.4.9.
+For the current versions, read `VERSION` (icey-server) and `ICEY_VERSION` (the pinned core icey dependency) rather than relying on numbers in this file.
 
 ## When To Use This Skill
 

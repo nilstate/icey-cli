@@ -85,9 +85,9 @@ surface:
 - Scoop
 - Chocolatey
 
-The tracked templates live under [packaging/](/home/kam/dev/icey-cli/packaging/README.md), and the local rendered outputs are generated into `.stage/package-managers/rendered/`.
+The tracked templates live under [packaging/](packaging/README.md), and the local rendered outputs are generated into `.stage/package-managers/rendered/`.
 
-The exact `icey` dependency release is pinned in [ICEY_VERSION](/home/kam/dev/icey-cli/ICEY_VERSION). Release and CI jobs now build against that exact tag instead of a floating checkout.
+The exact `icey` dependency release is pinned in [ICEY_VERSION](ICEY_VERSION). Release and CI jobs now build against that exact tag instead of a floating checkout.
 
 Use:
 
@@ -167,6 +167,7 @@ icey-server [options]
   --source <path-or-url>  Media source file, device, or RTSP URL
   --record-dir <path>     Output directory for record mode (default: ./recordings)
   --web-root <path>       Path to web UI dist/ directory (packaged installs auto-fallback to share/icey-server/web)
+  --log-level <level>     trace|debug|info|warn|error (default: info)
   --loop                  Enable looping in stream mode
   --no-loop               Disable looping in stream mode
   --no-turn               Disable embedded TURN server
@@ -194,6 +195,42 @@ If the browser cannot even see the server peer, you have a signalling problem, n
 - `GET /api/config` returns browser-facing ICE/TURN config plus runtime mode/version
 
 The binary also now supports `--help`, `--version`, and `--doctor`, and exposes `--host`, `--turn-external-ip`, `--loop`, and `--no-loop` for operator bring-up without editing JSON first.
+
+## Configuration
+
+Settings resolve with the precedence `built-in defaults < config file < environment variables < CLI flags`. Every general setting is reachable without a config file:
+
+| Setting | Config key | Environment | Flag |
+|---|---|---|---|
+| Config file path | — | `ICEY_CONFIG` | `-c, --config` |
+| Bind host | `http.host` | `ICEY_HOST` | `--host` |
+| HTTP/WS port | `http.port` | `ICEY_PORT` | `--port` |
+| TURN port | `turn.port` | `ICEY_TURN_PORT` | `--turn-port` |
+| TURN external IP | `turn.externalIp` | `ICEY_TURN_EXTERNAL_IP` | `--turn-external-ip` |
+| TURN enabled | `turn.enabled` | `ICEY_TURN` (true/false) | `--no-turn` |
+| Mode | `media.mode` | `ICEY_MODE` | `--mode` |
+| Source | `media.source` | `ICEY_SOURCE` | `--source` |
+| Record dir | `media.recordDir` | `ICEY_RECORD_DIR` | `--record-dir` |
+| Loop | `media.loop` | `ICEY_LOOP` (true/false/auto) | `--loop` / `--no-loop` |
+| Web root | `webRoot` | `ICEY_WEB_ROOT` | `--web-root` |
+| TLS cert / key | `tls.cert` / `tls.key` | `ICEY_TLS_CERT` / `ICEY_TLS_KEY` | `--tls-cert` / `--tls-key` |
+| Log level | — | `ICEY_LOG_LEVEL` | `--log-level` |
+| API/WS auth token | `auth.token` | `ICEY_AUTH_TOKEN` | — |
+| TURN HMAC secret | `turn.secret` | `ICEY_TURN_SECRET` | — |
+
+Secrets (`ICEY_AUTH_TOKEN`, `ICEY_TURN_SECRET`) are environment-or-file only by design so they never appear in process listings. Unknown config keys produce startup warnings, out-of-range ports and invalid modes are rejected, and an explicitly passed `--config` path that does not exist is an error rather than a silent fall-back to defaults.
+
+When `auth.token` is set, the HTTP API (everything except `/api/health`), WebSocket signalling, and `/artifacts/` downloads (recordings, snapshots, clips) all require it — via `Authorization: Bearer`, `X-Icey-Token`, or a `token` query parameter for plain links.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | success (or `--doctor` ready) |
+| 1 | runtime failure (or `--doctor` not ready) |
+| 2 | usage error (bad flag or value) |
+| 3 | config error (missing or invalid config file) |
+| 4 | startup preflight failure (including port conflicts) |
 
 ## Web UI development
 

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Security: `/artifacts/` downloads (recordings, snapshots, motion clips) now require the auth token when one is configured, matching the API and signalling. Plain links may pass the token as a `token` query parameter; the web UI appends it automatically.
+- Security hardening recorded from earlier unreleased commits: control-plane protection (auth on `/api/*` except `/api/health`, authenticated WebSocket signalling, status path scrubbing) and CLI port argument validation.
+- Port conflicts and invalid listen addresses now fail startup with an actionable error and a non-zero exit, instead of an asynchronous debug-level log followed by a success banner. Both HTTP/WS and TURN ports are probe-checked (TCP and UDP).
+- `--log-level <trace|debug|info|warn|error>` and `ICEY_LOG_LEVEL` control console verbosity; the default is now `info` (previously hardwired to `debug`).
+- SIGTERM triggers the same graceful shutdown as SIGINT, so `docker stop` and systemd stops no longer kill active sessions, recordings, and TURN allocations uncleanly.
+- The binary reads general `ICEY_*` environment variables natively (`ICEY_CONFIG`, `ICEY_HOST`, `ICEY_PORT`, `ICEY_TURN_PORT`, `ICEY_TURN_EXTERNAL_IP`, `ICEY_MODE`, `ICEY_SOURCE`, `ICEY_RECORD_DIR`, `ICEY_WEB_ROOT`, `ICEY_TLS_CERT`, `ICEY_TLS_KEY`, `ICEY_LOOP`, `ICEY_TURN`) with `defaults < config file < env < flags` precedence. The Docker entrypoint now only supplies container defaults.
+- An explicitly passed `--config` path that does not exist is an error (exit 3) instead of silently running on built-in defaults.
+- Config validation: out-of-range ports are rejected (previously `"port": 70000` silently truncated to 4464), unknown `media.mode` values fail instead of defaulting to `stream`, unknown config keys warn at startup and in `--doctor`, `turn.credentialTtlSeconds` is clamped to 24 hours, and a parse failure no longer leaves a half-populated config behind.
+- Flags that need a value report `flag '--host' requires a value` instead of blaming the next argument.
+- Distinct exit codes, documented in `--help` and the README: 0 success, 1 runtime, 2 usage, 3 config, 4 preflight.
+- The packaged web-root fallback applies whenever `webRoot` was not explicitly set, fixing packaged installs that carry a `config.json` without a `webRoot` key.
+- The startup banner prints which config file was loaded (or that defaults are in use) and scrubs `user:pass@` from RTSP source URLs; `--doctor` output scrubs them too.
+- Docker: `HEALTHCHECK` wired to `/api/health` in both the Dockerfile and Compose, `.dockerignore` added, `curl` included in the image.
+- Example configs now surface `auth.token`, `turn.secret`, and `turn.credentialTtlSeconds`, and align on the `h264` auto-pick codec sentinel.
+- Bumped the pinned `icey` dependency from `2.4.9` to `2.4.11`.
+
 ## 0.2.3 - 2026-04-28
 
 - Bumped the pinned `icey` dependency from `2.4.8` to `2.4.9` (codec registry now runtime-probes encoders so Linux CI no longer picks `h264_nvenc` on hosts without CUDA).

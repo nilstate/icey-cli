@@ -3,11 +3,20 @@
     "host": "0.0.0.0",
     "port": 4500
   },
+  "tls": {
+    "cert": "",
+    "key": ""
+  },
+  "auth": {
+    "token": ""
+  },
   "turn": {
     "enabled": true,
     "port": 3478,
     "realm": "0state.com",
-    "externalIp": ""
+    "externalIp": "",
+    "secret": "",
+    "credentialTtlSeconds": 3600
   },
   "media": {
     "mode": "stream",
@@ -15,7 +24,7 @@
     "recordDir": "./recordings",
     "loop": false,
     "video": {
-      "codec": "libx264",
+      "codec": "h264",
       "width": 1280,
       "height": 720,
       "fps": 30,
