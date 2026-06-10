@@ -8,6 +8,7 @@ ARG ICEY_ENTRYPOINT=icey-cli/docker/entrypoint.sh
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
+  curl \
   ffmpeg \
   libssl3t64 \
   && rm -rf /var/lib/apt/lists/*
@@ -26,6 +27,11 @@ COPY --chown=icey:icey ${ICEY_ENTRYPOINT} /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 4500 3478/tcp 3478/udp
+
+# /api/health is the unauthenticated liveness endpoint; a wedged-but-alive
+# process fails this and gets restarted under restart policies.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${ICEY_PORT:-4500}/api/health" || exit 1
 
 USER icey
 

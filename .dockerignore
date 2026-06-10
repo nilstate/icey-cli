@@ -1,0 +1,14 @@
+# Keep the build context small: the image only needs the built binary,
+# the web dist, the entrypoint, and the sample media. Negations re-include
+# the binaries the Dockerfile COPYies out of otherwise-excluded build trees.
+.git
+.stage
+_CPack_Packages
+build*
+!build-release/src/server/icey-server
+!build-dev/src/server/icey-server
+*.tar.gz
+*.zip
+*.deb
+web/node_modules
+recordings

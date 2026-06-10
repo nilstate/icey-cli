@@ -24,3 +24,10 @@ services:
       ICEY_RECORD_DIR: ${ICEY_RECORD_DIR:-/app/recordings}
     volumes:
       - ./recordings:/app/recordings
+    healthcheck:
+      # $$ defers expansion to the container shell so the configured port is used.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${ICEY_PORT:-4500}/api/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
