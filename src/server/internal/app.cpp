@@ -12,6 +12,8 @@
 #include "icy/logger.h"
 #include "icy/net/sslcontext.h"
 #include "icy/net/sslsocket.h"
+#include "icy/net/tcpsocket.h"
+#include "icy/net/udpsocket.h"
 
 #include <openssl/crypto.h>
 
@@ -34,6 +36,25 @@ bool isRemoteStreamSource(const std::string& source)
         || source.rfind("udp:", 0) == 0
         || source.rfind("tcp:", 0) == 0
         || source.rfind("file:", 0) == 0;
+}
+
+/// Strips `user:pass@` from URL authority sections so RTSP credentials
+/// never reach the console or doctor output. (The HTTP API applies the
+/// same scrubbing in httpfactory.cpp.)
+std::string stripSourceUserInfo(std::string value)
+{
+    const auto scheme = value.find("://");
+    if (scheme == std::string::npos)
+        return value;
+
+    const auto authority = scheme + 3;
+    const auto slash = value.find('/', authority);
+    const auto at = value.find('@', authority);
+    if (at != std::string::npos &&
+        (slash == std::string::npos || at < slash)) {
+        value.erase(authority, at - authority + 1);
+    }
+    return value;
 }
 
 bool isWildcardHost(const std::string& host)
@@ -130,6 +151,58 @@ std::vector<std::string> makeAllowedOrigins(const Config& config)
     return origins;
 }
 
+/// Bind-probes a listen port so a conflict fails startup with an actionable
+/// error instead of an asynchronous debug-level log followed by a success
+/// banner. libuv sets SO_REUSEADDR before binding, so the probe socket
+/// (closed before the loop runs, never listening) does not block the real
+/// bind that follows.
+bool probePort(const std::string& host,
+               uint16_t port,
+               const char* what,
+               bool probeUdp,
+               std::string& error)
+{
+    const std::string where = host + ":" + std::to_string(port);
+    try {
+        const net::Address address(host, port);
+
+        net::TCPSocket tcp;
+        tcp.bind(address);
+        // libuv can defer EADDRINUSE from bind to listen, so the probe must
+        // listen too or an active conflicting listener goes undetected.
+        if (!tcp.error().any())
+            tcp.listen(1);
+        if (tcp.error().any()) {
+            error = std::string("cannot bind ") + what + " port on " + where +
+                    " (" + tcp.error().message + ")" +
+                    " — is another process using the port?";
+            return false;
+        }
+        tcp.close();
+
+        if (probeUdp) {
+            net::UDPSocket udp;
+            udp.bind(address);
+            if (udp.error().any()) {
+                error = std::string("cannot bind ") + what +
+                        " UDP port on " + where +
+                        " (" + udp.error().message + ")" +
+                        " — is another process using the port?";
+                return false;
+            }
+            udp.close();
+        }
+        // uv_close completes in a loop iteration; pump one so the probe
+        // sockets release their fds before the real binds happen.
+        uv_run(uv::defaultLoop(), UV_RUN_NOWAIT);
+        return true;
+    } catch (const std::exception& exc) {
+        error = std::string("invalid ") + what + " listen address " + where +
+                " (" + exc.what() + ")";
+        return false;
+    }
+}
+
 } // namespace
 
 
@@ -184,6 +257,24 @@ bool MediaServerApp::start()
     }
 
     _startedAt = std::chrono::steady_clock::now();
+
+    // Fail fast on port conflicts and invalid listen addresses; the real
+    // binds below report failures asynchronously, after the success banner.
+    std::string bindError;
+    if (!probePort(_config.host, _config.port, "HTTP/WS",
+                   /*probeUdp=*/false, bindError)) {
+        std::cerr << "Error: " << bindError << '\n'
+                  << "Try a different --port or stop the conflicting process.\n";
+        return false;
+    }
+    if (_config.enableTurn &&
+        !probePort(_config.host, _config.turnPort, "TURN",
+                   /*probeUdp=*/true, bindError)) {
+        std::cerr << "Error: " << bindError << '\n'
+                  << "Try a different --turn-port, --no-turn, or stop the "
+                     "conflicting process.\n";
+        return false;
+    }
 
     if (_config.enableTurn) {
         _turn = std::make_unique<EmbeddedTurn>(_config);
@@ -314,8 +405,10 @@ bool MediaServerApp::start()
     std::cout << "Web UI: "
               << (_config.tls.enabled() ? "https" : "http")
               << "://localhost:" << _config.port << "/\n";
+    std::cout << "Config: " << _configLoad.path
+              << (_configLoad.exists ? " (loaded)" : " (defaults)") << '\n';
     if (_config.mode == Config::Mode::Stream && !_config.source.empty())
-        std::cout << "Source: " << _config.source << '\n';
+        std::cout << "Source: " << stripSourceUserInfo(_config.source) << '\n';
     if (_config.mode == Config::Mode::Record)
         std::cout << "Recordings: " << _config.recordDir << '\n';
     if (_config.mode == Config::Mode::Relay)
@@ -331,6 +424,8 @@ json::Value MediaServerApp::doctorJson() const
     json::Value j;
     json::Value checks = json::Value::array();
     json::Value warnings = json::Value::array();
+    for (const auto& warning : _configLoad.warnings)
+        warnings.push_back(warning);
 
     bool readyToRun = true;
     bool degraded = false;
@@ -340,7 +435,7 @@ json::Value MediaServerApp::doctorJson() const
     j["product"] = kProductName;
     j["service"] = kServiceName;
     j["mode"] = Config::modeName(_config.mode);
-    j["source"]["value"] = _config.source;
+    j["source"]["value"] = stripSourceUserInfo(_config.source);
     j["source"]["kind"] = sourceType;
     j["source"]["remote"] = isRemoteStreamSource(_config.source);
     j["http"]["host"] = _config.host;
@@ -422,7 +517,7 @@ json::Value MediaServerApp::doctorJson() const
         }
         else if (isRemoteStreamSource(_config.source)) {
             checks.push_back(makeCheck("source", "pass",
-                "Using remote media source " + _config.source));
+                "Using remote media source " + stripSourceUserInfo(_config.source)));
         }
         else if (av::parseDeviceUrl(_config.source)) {
             checks.push_back(makeCheck("source", "pass",

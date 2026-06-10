@@ -59,6 +59,97 @@ std::string resolvePathFromConfig(const std::string& configPath,
     return fs::normalize(fs::makePath(fs::dirname(configPath), value));
 }
 
+/// Reads an integral port value with range validation; nlohmann's default
+/// behaviour silently truncates out-of-range values into uint16_t (70000
+/// would become 4464).
+uint16_t readPort(const json::Value& obj,
+                  const char* key,
+                  uint16_t current,
+                  const char* what)
+{
+    if (!obj.contains(key))
+        return current;
+    const auto value = obj[key].get<int64_t>();
+    if (value < 1 || value > 65535) {
+        throw std::runtime_error(std::string("invalid ") + what + " " +
+                                 std::to_string(value) +
+                                 ": expected 1..65535");
+    }
+    return static_cast<uint16_t>(value);
+}
+
+/// Known config keys; anything outside this shape draws a startup warning
+/// so typos ("extenalIp") don't silently fall back to defaults.
+const json::Value& configSchema()
+{
+    static const json::Value schema = json::Value::parse(R"({
+        "http": {"host": true, "port": true},
+        "tls": {"cert": true, "key": true},
+        "auth": {"token": true, "allowedOrigins": true},
+        "media": {
+            "mode": true, "source": true, "recordDir": true, "loop": true,
+            "passthroughVideo": true,
+            "video": {"codec": true, "width": true, "height": true,
+                       "fps": true, "bitrate": true},
+            "audio": {"codec": true, "channels": true, "sampleRate": true,
+                       "bitrate": true},
+            "intelligence": {
+                "vision": {
+                    "enabled": true, "everyNthFrame": true,
+                    "minIntervalUsec": true, "queueDepth": true,
+                    "normalize": {"width": true, "height": true,
+                                   "pixelFmt": true},
+                    "motion": {"gridWidth": true, "gridHeight": true,
+                                "warmupFrames": true, "threshold": true,
+                                "cooldownUsec": true},
+                    "snapshots": {"enabled": true, "dir": true,
+                                   "minIntervalUsec": true},
+                    "clips": {"enabled": true, "dir": true,
+                               "preRollUsec": true, "postRollUsec": true}
+                },
+                "speech": {"enabled": true, "queueDepth": true,
+                            "startThreshold": true, "stopThreshold": true,
+                            "minSilenceUsec": true,
+                            "updateIntervalUsec": true}
+            }
+        },
+        "turn": {"enabled": true, "port": true, "realm": true,
+                  "externalIp": true, "username": true, "secret": true,
+                  "credentialTtlSeconds": true, "allowLocalRelay": true},
+        "webRoot": true
+    })");
+    return schema;
+}
+
+void collectUnknownKeys(const json::Value& value,
+                        const json::Value& schema,
+                        const std::string& prefix,
+                        std::vector<std::string>& unknown)
+{
+    if (!value.is_object())
+        return;
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        if (!schema.contains(it.key())) {
+            unknown.push_back(prefix + it.key());
+        } else if (it->is_object() && schema[it.key()].is_object()) {
+            collectUnknownKeys(*it, schema[it.key()],
+                               prefix + it.key() + ".", unknown);
+        }
+    }
+}
+
+/// Strips nlohmann's "[json.exception.parse_error.101] " style prefix while
+/// keeping the useful line/column detail.
+std::string friendlyJsonError(const std::string& what)
+{
+    if (what.rfind("[json.exception.", 0) == 0) {
+        const auto end = what.find("] ");
+        if (end != std::string::npos)
+            return what.substr(end + 2);
+    }
+    return what;
+}
+
 } // namespace
 
 
@@ -69,6 +160,20 @@ Config::Mode Config::parseMode(const std::string& s)
     if (s == "relay")
         return Mode::Relay;
     return Mode::Stream;
+}
+
+
+bool Config::tryParseMode(const std::string& s, Mode& out)
+{
+    if (s == "stream")
+        out = Mode::Stream;
+    else if (s == "record")
+        out = Mode::Record;
+    else if (s == "relay")
+        out = Mode::Relay;
+    else
+        return false;
+    return true;
 }
 
 
@@ -113,10 +218,14 @@ ConfigLoadResult loadConfigResult(const std::string& path)
         json::Value j;
         file >> j;
 
+        collectUnknownKeys(j, configSchema(), "", result.warnings);
+        for (auto& warning : result.warnings)
+            warning = "unknown config key '" + warning + "' (ignored)";
+
         if (j.contains("http")) {
             auto& h = j["http"];
             c.host = h.value("host", c.host);
-            c.port = h.value("port", c.port);
+            c.port = readPort(h, "port", c.port, "http.port");
         }
         if (j.contains("tls")) {
             auto& t = j["tls"];
@@ -131,7 +240,14 @@ ConfigLoadResult loadConfigResult(const std::string& path)
         }
         if (j.contains("media")) {
             auto& m = j["media"];
-            c.mode = Config::parseMode(m.value("mode", "stream"));
+            if (m.contains("mode")) {
+                const auto modeStr = m["mode"].get<std::string>();
+                if (!Config::tryParseMode(modeStr, c.mode)) {
+                    throw std::runtime_error(
+                        "invalid media.mode '" + modeStr +
+                        "': expected stream, record, or relay");
+                }
+            }
             c.source = m.value("source", c.source);
             c.recordDir = m.value("recordDir", c.recordDir);
             c.loop = m.value("loop", c.loop);
@@ -214,7 +330,7 @@ ConfigLoadResult loadConfigResult(const std::string& path)
         if (j.contains("turn")) {
             auto& t = j["turn"];
             c.enableTurn = t.value("enabled", c.enableTurn);
-            c.turnPort = t.value("port", c.turnPort);
+            c.turnPort = readPort(t, "port", c.turnPort, "turn.port");
             c.turnRealm = t.value("realm", c.turnRealm);
             c.turnExternalIP = t.value("externalIp", c.turnExternalIP);
             c.turnUsername = t.value("username", c.turnUsername);
@@ -222,10 +338,23 @@ ConfigLoadResult loadConfigResult(const std::string& path)
             c.turnCredentialTtlSeconds = t.value(
                 "credentialTtlSeconds",
                 c.turnCredentialTtlSeconds);
+            // Time-boxing is the point of the HMAC credential scheme; an
+            // absurd TTL (typo'd milliseconds, say) must not produce
+            // effectively permanent relay credentials.
+            constexpr int kMaxTurnTtlSeconds = 24 * 3600;
+            if (c.turnCredentialTtlSeconds > kMaxTurnTtlSeconds) {
+                result.warnings.push_back(
+                    "turn.credentialTtlSeconds " +
+                    std::to_string(c.turnCredentialTtlSeconds) +
+                    " clamped to " + std::to_string(kMaxTurnTtlSeconds));
+                c.turnCredentialTtlSeconds = kMaxTurnTtlSeconds;
+            }
             c.turnAllowLocalRelay = t.value("allowLocalRelay", c.turnAllowLocalRelay);
         }
-        if (j.contains("webRoot"))
+        if (j.contains("webRoot")) {
             c.webRoot = j["webRoot"].get<std::string>();
+            result.webRootExplicit = true;
+        }
 
         c.source = resolvePathFromConfig(path, c.source, true);
         c.recordDir = resolvePathFromConfig(path, c.recordDir);
@@ -235,10 +364,13 @@ ConfigLoadResult loadConfigResult(const std::string& path)
             c.vision.clips.dir = fs::makePath(c.recordDir, "clips");
         c.vision.snapshots.dir = resolvePathFromConfig(path, c.vision.snapshots.dir);
         c.vision.clips.dir = resolvePathFromConfig(path, c.vision.clips.dir);
-        c.webRoot = resolvePathFromConfig(path, c.webRoot);
+        // Only resolve webRoot against the config dir when the file set it;
+        // resolving the built-in default would defeat the packaged
+        // share/icey-server/web fallback for installs with a config file.
+        if (result.webRootExplicit)
+            c.webRoot = resolvePathFromConfig(path, c.webRoot);
         c.tls.certFile = resolvePathFromConfig(path, c.tls.certFile);
         c.tls.keyFile = resolvePathFromConfig(path, c.tls.keyFile);
-        applyEnvironment(c);
 
         result.config = std::move(c);
         result.usedDefaults = false;
@@ -246,8 +378,11 @@ ConfigLoadResult loadConfigResult(const std::string& path)
     catch (const std::exception& e) {
         result.valid = false;
         result.usedDefaults = false;
-        result.error = e.what();
-        result.config = std::move(c);
+        result.error = friendlyJsonError(e.what());
+        // Deliberately leave result.config default-constructed: a
+        // half-populated config (fields parsed before the failure kept,
+        // the rest defaulted) is worse than a clean failure.
+        result.config = Config{};
     }
 
     applyEnvironment(result.config);

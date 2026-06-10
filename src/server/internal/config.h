@@ -126,6 +126,9 @@ struct Config
     bool turnAllowLocalRelay = false;
 
     static Mode parseMode(const std::string& s);
+    /// Strict variant: returns false for unknown mode strings instead of
+    /// defaulting to Stream, so config typos fail loudly.
+    static bool tryParseMode(const std::string& s, Mode& out);
     static const char* modeName(Mode mode);
 };
 
@@ -137,7 +140,13 @@ struct ConfigLoadResult
     bool exists = false;
     bool valid = true;
     bool usedDefaults = true;
+    /// True when the config file set webRoot explicitly; the packaged
+    /// web-root fallback only applies when it did not.
+    bool webRootExplicit = false;
     std::string error;
+    /// Non-fatal issues (unknown keys, clamped values) surfaced at startup
+    /// and in --doctor.
+    std::vector<std::string> warnings;
 };
 
 
