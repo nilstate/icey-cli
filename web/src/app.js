@@ -549,6 +549,9 @@ function safeArtifactUrl (url) {
     const parsed = new URL(url, location.origin)
     if (parsed.origin !== location.origin) return ''
     if (!parsed.pathname.startsWith('/artifacts/')) return ''
+    // Artifact downloads are auth-gated like the API; plain links cannot
+    // carry headers, so attach the token as a query parameter.
+    if (authToken) parsed.searchParams.set('token', authToken)
     return `${parsed.pathname}${parsed.search}${parsed.hash}`
   } catch (_) {
     return ''

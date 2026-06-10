@@ -29,12 +29,21 @@ bool authorizedRequest(const http::Request& request,
     const std::string auth = request.get("Authorization", std::string());
     constexpr std::string_view prefix = "Bearer ";
     if (auth.size() > prefix.size() &&
-        std::equal(prefix.begin(), prefix.end(), auth.begin())) {
-        return constantTimeEqual(std::string_view(auth).substr(prefix.size()), token);
+        std::equal(prefix.begin(), prefix.end(), auth.begin()) &&
+        constantTimeEqual(std::string_view(auth).substr(prefix.size()), token)) {
+        return true;
     }
 
     const std::string headerToken = request.get("X-Icey-Token", std::string());
-    return constantTimeEqual(headerToken, token);
+    if (!headerToken.empty() && constantTimeEqual(headerToken, token))
+        return true;
+
+    // Plain links (artifact downloads in the web UI) cannot carry headers,
+    // so a `token` query parameter is accepted as a last resort.
+    NVCollection params;
+    request.getURIParameters(params);
+    const std::string queryToken = params.get("token", std::string());
+    return !queryToken.empty() && constantTimeEqual(queryToken, token);
 }
 
 std::string stripUserInfo(std::string value)
@@ -115,16 +124,24 @@ class StaticFileResponder : public http::ServerResponder
 public:
     StaticFileResponder(http::ServerConnection& conn,
                         const std::string& webRoot,
-                        const std::string& artifactRoot)
+                        const std::string& artifactRoot,
+                        const std::string& authToken)
         : http::ServerResponder(conn)
         , _webRoot(webRoot)
         , _artifactRoot(artifactRoot)
+        , _authToken(authToken)
     {
     }
 
     void onRequest(http::Request& request, http::Response& response) override
     {
         std::string path = request.getURI();
+
+        // Route and resolve files on the path only; tokens and cache
+        // busters arrive as query parameters.
+        const auto cut = path.find_first_of("?#");
+        if (cut != std::string::npos)
+            path.resize(cut);
 
         if (path == "/" || path.empty())
             path = "/index.html";
@@ -138,6 +155,13 @@ public:
         std::string basePath = _webRoot;
         std::string localPath = path;
         if (path.rfind("/artifacts/", 0) == 0) {
+            // Recordings, snapshots, and motion clips are operator data;
+            // they get the same protection as the API.
+            if (!authorizedRequest(request, _authToken)) {
+                response.setStatus(http::StatusCode::Unauthorized);
+                connection().sendHeader();
+                return;
+            }
             basePath = _artifactRoot;
             localPath = path.substr(std::string("/artifacts").size());
         }
@@ -183,6 +207,7 @@ private:
 
     std::string _webRoot;
     std::string _artifactRoot;
+    std::string _authToken;
 };
 
 } // namespace
@@ -204,7 +229,7 @@ std::unique_ptr<http::ServerResponder> HttpFactory::createResponder(
         return createApiResponder(conn);
 
     return std::make_unique<StaticFileResponder>(
-        conn, _webRoot, _runtimeConfig.artifactRoot);
+        conn, _webRoot, _runtimeConfig.artifactRoot, _runtimeConfig.authToken);
 }
 
 
